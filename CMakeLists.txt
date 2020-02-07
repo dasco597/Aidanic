@@ -1,0 +1,21 @@
+cmake_minimum_required(version 3.10)
+
+project(Aidanic VERSION 0.1)
+
+#set(CMAKE_CXX_STANDARD 11)
+
+set (CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
+set (CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
+set (CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
+
+add_subdirectory(vendor/glfw)
+add_subdirectory(vendor/glm)
+
+find_package(Vulkan REQUIRED)
+
+include_directories(
+    ${PROJECT_SOURCE_DIR}/vendor/glfw/include
+    ${PROJECT_SOURCE_DIR}/vendor/glm/include
+    ${VULKAN_INCLUDE_DIR})
+
+add_subdirectory(src)
