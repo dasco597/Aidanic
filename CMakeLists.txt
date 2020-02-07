@@ -1,4 +1,4 @@
-cmake_minimum_required(version 3.10)
+cmake_minimum_required(VERSION 3.10)
 
 project(Aidanic VERSION 0.1)
 
