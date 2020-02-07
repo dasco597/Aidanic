@@ -16,6 +16,6 @@ find_package(Vulkan REQUIRED)
 include_directories(
     ${PROJECT_SOURCE_DIR}/vendor/glfw/include
     ${PROJECT_SOURCE_DIR}/vendor/glm/include
-    ${VULKAN_INCLUDE_DIR})
+    $ENV{VULKAN_SDK}/Include)
 
 add_subdirectory(src)
