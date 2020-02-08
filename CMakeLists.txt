@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.10)
 
 project(Aidanic VERSION 0.1)
 
-#set(CMAKE_CXX_STANDARD 11)
+set(CMAKE_CXX_STANDARD 17)
 
 set (CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 set (CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
@@ -13,9 +13,10 @@ add_subdirectory(vendor/glm)
 
 find_package(Vulkan REQUIRED)
 
-include_directories(
+include_directories(${PROJECT_SOURCE_DIR}/src
     ${PROJECT_SOURCE_DIR}/vendor/glfw/include
-    ${PROJECT_SOURCE_DIR}/vendor/glm/include
+    ${PROJECT_SOURCE_DIR}/vendor/glm/glm
+    ${PROJECT_SOURCE_DIR}/vendor/spdlog/include
     $ENV{VULKAN_SDK}/Include)
 
 add_subdirectory(src)
