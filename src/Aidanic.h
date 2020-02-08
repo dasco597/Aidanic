@@ -11,18 +11,21 @@ public:
     ~Aidanic();
     void Run();
 
-    static void windowResizeCallback(GLFWwindow* window, int width, int height);
+    static void WindowResizeCallback(GLFWwindow* window, int width, int height);
 
 private:
-    void init();
-    void loop();
-    void cleanUp();
+    void Init();
+    void Loop();
+    void CleanUp();
 
-    IOInterface IOInterface;
+    IOInterface IOinterface;
     RendererRTX rendererRTX;
 
     // variables
-    bool _quit = false;
+    bool quit = false, windowResized = false, cleanedUp = false;
     uint32_t windowSize[2] = { 0, 0 };
+    uint32_t inputs = 0;
     glm::mat4x4 viewMatrix = glm::mat4x4(0.0);
+
+    void ProcessInputs();
 };

@@ -1,4 +1,5 @@
 #include "Aidanic.h"
+#include "tools/config.h"
 #include "tools/Log.h"
 
 #include <iostream>
@@ -20,21 +21,49 @@ int main() {
 }
 
 void Aidanic::Run() {
-    init();
-    loop();
+    Init();
+    Loop();
+    CleanUp();
 }
 
-Aidanic::~Aidanic() { cleanUp(); }
+Aidanic::~Aidanic() { if (!cleanedUp) CleanUp(); }
 
-void Aidanic::init() {
+void Aidanic::Init() {
     Log::Init();
     LOG_INFO("Logger initialized");
+    LOG_INFO("~ Initializing Aidanic...");
+
+    windowSize[0] = _CONFIG::initialWindowSize[0];
+    windowSize[1] = _CONFIG::initialWindowSize[1];
+
+    IOinterface.Init(this, windowSize[0], windowSize[1]);
+    LOG_INFO("IO interface initialized");
 }
 
-void Aidanic::loop() {
-
+void Aidanic::Loop() {
+    LOG_INFO("~ Entering main loop...");
+    while (!quit && !IOinterface.WindowCloseCheck()) {
+        // input handling
+        IOinterface.PollEvents();
+        inputs = IOinterface.GetInputs();
+        ProcessInputs();
+    }
 }
 
-void Aidanic::cleanUp() {
+void Aidanic::ProcessInputs() {
+    quit |= (bool)(inputs & static_cast<uint32_t>(INPUTS::ESC));
+}
 
+void Aidanic::CleanUp() {
+    LOG_INFO("~ Shutting down Aidanic...");
+
+    IOinterface.CleanUp();
+    LOG_INFO("IO interface cleaned up.");
+
+    cleanedUp = true;
+}
+
+void Aidanic::WindowResizeCallback(GLFWwindow* window, int width, int height) {
+    Aidanic* application = reinterpret_cast<Aidanic*>(glfwGetWindowUserPointer(window));
+    application->windowResized = true;
 }
