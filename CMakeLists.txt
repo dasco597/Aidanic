@@ -17,6 +17,6 @@ include_directories(${PROJECT_SOURCE_DIR}/src
     ${PROJECT_SOURCE_DIR}/vendor/glfw/include
     ${PROJECT_SOURCE_DIR}/vendor/glm/glm
     ${PROJECT_SOURCE_DIR}/vendor/spdlog/include
-    $ENV{VULKAN_SDK}/Include)
+    ${Vulkan_INCLUDE_DIRS})
 
 add_subdirectory(src)

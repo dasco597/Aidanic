@@ -1,6 +1,5 @@
 #pragma once
 
-class RendererRTX
-{
-};
+class RendererRTX {
 
+};

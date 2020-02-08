@@ -36,16 +36,16 @@ void Aidanic::Init() {
     windowSize[0] = _CONFIG::initialWindowSize[0];
     windowSize[1] = _CONFIG::initialWindowSize[1];
 
-    IOinterface.Init(this, windowSize[0], windowSize[1]);
+    ioInterface.Init(this, windowSize[0], windowSize[1]);
     LOG_INFO("IO interface initialized");
 }
 
 void Aidanic::Loop() {
     LOG_INFO("~ Entering main loop...");
-    while (!quit && !IOinterface.WindowCloseCheck()) {
+    while (!quit && !ioInterface.WindowCloseCheck()) {
         // input handling
-        IOinterface.PollEvents();
-        inputs = IOinterface.GetInputs();
+        ioInterface.PollEvents();
+        inputs = ioInterface.GetInputs();
         ProcessInputs();
     }
 }
@@ -57,7 +57,7 @@ void Aidanic::ProcessInputs() {
 void Aidanic::CleanUp() {
     LOG_INFO("~ Shutting down Aidanic...");
 
-    IOinterface.CleanUp();
+    ioInterface.CleanUp();
     LOG_INFO("IO interface cleaned up.");
 
     cleanedUp = true;

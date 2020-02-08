@@ -1,5 +1,4 @@
 #pragma once
-
 #include "IOInterface.h"
 #include "RendererRTX.h"
 
@@ -18,7 +17,7 @@ private:
     void Loop();
     void CleanUp();
 
-    IOInterface IOinterface;
+    IOInterface ioInterface;
     RendererRTX rendererRTX;
 
     // variables
