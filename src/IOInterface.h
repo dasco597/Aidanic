@@ -25,12 +25,12 @@ enum struct INPUTS {
 class IOInterface {
 public:
     void Init(Aidanic* application, uint32_t width, uint32_t height);
-	VkResult CreateWindowSurface(VkInstance& instance, const VkAllocationCallbacks* allocator, VkSurfaceKHR* surface);
 	
 	inline int WindowCloseCheck() { return glfwWindowShouldClose(window); };
 	void MinimizeSuspend(); // doesn't return unless window isn't minimized
 	inline void PollEvents() { glfwPollEvents(); }; // updates glfw state (key presses etc)
 	uint32_t GetInputs(); // returns bits corresponding to INPUTS for the different input signals
+	inline GLFWwindow* GetWindow() { return window; }
 
 	void CleanUp();
 

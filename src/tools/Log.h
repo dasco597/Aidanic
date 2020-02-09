@@ -5,6 +5,12 @@
 #include <spdlog/spdlog.h>
 #include <spdlog/fmt/ostr.h>
 
+/*
+    Guildlines for logging:
+    signal the start of a function inside the function and signal it's completion after the line it's called in
+    try to start log entries with capital letters
+*/
+
 class Log {
 public:
     static void Init();
@@ -15,7 +21,8 @@ private:
     static std::shared_ptr<spdlog::logger> sLogger;
 };
 
-// log macros
+// LOG MACROS
+
 #ifdef _VERBOSE_OUTPUT
 #define LOG_TRACE(...)  Log::GetLogger()->trace(__VA_ARGS__)
 #define LOG_INFO(...)   Log::GetLogger()->info(__VA_ARGS__)

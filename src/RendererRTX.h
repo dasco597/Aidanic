@@ -1,5 +1,7 @@
 #pragma once
 
-class RendererRTX {
+#include "RendererBase.h"
+
+class RendererRTX: public RendererBase {
 
 };

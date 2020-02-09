@@ -41,11 +41,8 @@ uint32_t IOInterface::GetInputs() {
     return inputs;
 }
 
-VkResult IOInterface::CreateWindowSurface(VkInstance& instance, const VkAllocationCallbacks* allocator, VkSurfaceKHR* surface) {
-    return glfwCreateWindowSurface(instance, window, allocator, surface);
-}
-
 void IOInterface::CleanUp() {
+    LOG_INFO("Cleaning up ioInterface/GLFW...");
     glfwDestroyWindow(window);
     glfwTerminate();
     window = nullptr;

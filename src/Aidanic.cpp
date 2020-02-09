@@ -38,6 +38,9 @@ void Aidanic::Init() {
 
     ioInterface.Init(this, windowSize[0], windowSize[1]);
     LOG_INFO("IO interface initialized");
+
+    rendererRTX.Init(&ioInterface);
+    LOG_INFO("Vulkan renderer RTX initialized");
 }
 
 void Aidanic::Loop() {
@@ -57,8 +60,11 @@ void Aidanic::ProcessInputs() {
 void Aidanic::CleanUp() {
     LOG_INFO("~ Shutting down Aidanic...");
 
+    rendererRTX.CleanUp();
+    LOG_INFO("Vulkan renderer RTX cleaned up");
+
     ioInterface.CleanUp();
-    LOG_INFO("IO interface cleaned up.");
+    LOG_INFO("IO interface cleaned up");
 
     cleanedUp = true;
 }
