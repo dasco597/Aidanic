@@ -46,6 +46,9 @@ void Aidanic::Init() {
 void Aidanic::Loop() {
     LOG_INFO("~ Entering main loop...");
     while (!quit && !ioInterface.WindowCloseCheck()) {
+        // submit draw commands for this frame
+        rendererRTX.DrawFrame(windowResized);
+
         // input handling
         ioInterface.PollEvents();
         inputs = ioInterface.GetInputs();
