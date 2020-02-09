@@ -2,9 +2,11 @@
 
 /*
     todo: replace error checks with macro or something?
-    write dependency graph for initialization functions
+    write rtx code
     write descriptor set allocation system
 */
+
+#include "tools/Log.h"
 
 #define GLM_FORCE_RADIANS
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
@@ -15,6 +17,9 @@
 #include <vector>
 #include <optional>
 #include <string>
+
+// Check vulkan result macro
+#define _VK_CHECK_RESULT(result, ...) if (result != VK_SUCCESS) { LOG_ERROR(__VA_ARGS__); }
 
 class IOInterface;
 
@@ -82,8 +87,8 @@ protected:
 
 
     // initialization functions
-    void createInstance(); // must happen first
-    void setupDebugMessenger(); // should happen next for validation feedback for future vulkan opertations
+    void createInstance();
+    void setupDebugMessenger();
     void createSurface();
     void pickPhysicalDevice();
     void createLogicalDevice();
