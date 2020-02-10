@@ -68,7 +68,7 @@ const std::vector<uint16_t> indices = {
 void RendererBase::Init(IOInterface* ioInterface) {
     AID_INFO("Initializing vulkan renderer...");
     this->ioInterface = ioInterface;
-    setDeviceExtensions();
+    addDeviceExtensions();
     createInstance();
     setupDebugMessenger();
     createSurface();
@@ -94,11 +94,11 @@ void RendererBase::createInstance() {
 
     VkApplicationInfo appInfo = {};
     appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
-    appInfo.pApplicationName = "Hello Triangle";
-    appInfo.applicationVersion = VK_MAKE_VERSION(1, 0, 0);
-    appInfo.pEngineName = "No Engine";
-    appInfo.engineVersion = VK_MAKE_VERSION(1, 0, 0);
-    appInfo.apiVersion = VK_API_VERSION_1_0;
+    appInfo.pApplicationName = "Aidanic";
+    appInfo.applicationVersion = VK_MAKE_VERSION(0, 1, 0);
+    appInfo.pEngineName = "Aidanic Engine";
+    appInfo.engineVersion = VK_MAKE_VERSION(0, 1, 0);
+    appInfo.apiVersion = VK_API_VERSION_1_2;
 
     VkInstanceCreateInfo createInfo = {};
     createInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
@@ -138,18 +138,6 @@ void RendererBase::setupDebugMessenger() {
     createInfo.pfnUserCallback = debugCallback;
 
     _VK_CHECK_RESULT(createDebugUtilsMessengerEXT(instance, &createInfo, ALLOCATOR, &debugMessenger), "failed to set up debug messenger!");
-
-    /*
-    VkDebugUtilsMessengerCallbackDataEXT debugInitMessage = {};
-    debugInitMessage.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CALLBACK_DATA_EXT;
-    debugInitMessage.pMessageIdName = "Initialization";
-    debugInitMessage.messageIdNumber = 0;
-    debugInitMessage.pMessage = "Debug messenger initialized!";
-    
-    // submit initial debug message to confim functionality
-    auto func = (PFN_vkSubmitDebugUtilsMessageEXT)vkGetInstanceProcAddr(instance, "vkSubmitDebugUtilsMessageEXT");
-    func(instance, VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT, VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT, &debugInitMessage);
-    */
 }
 
 void RendererBase::createSurface() {
@@ -174,11 +162,10 @@ void RendererBase::pickPhysicalDevice() {
         }
     }
 
-    std::string extensionWarning = "vulkan extensions required by Aidanic: ";
-    for (const char* extension : deviceExtensions) extensionWarning += std::string(extension) + ", ";
-    AID_WARN(extensionWarning);
-
     if (physicalDevice == VK_NULL_HANDLE) {
+        std::string extensionWarning = "vulkan extensions required by Aidanic: ";
+        for (const char* extension : deviceExtensions) extensionWarning += std::string(extension) + ", ";
+        AID_WARN(extensionWarning);
         AID_ERROR("failed to find a suitable GPU!");
     }
 }
@@ -669,9 +656,15 @@ void RendererBase::recreateSwapChain() {
 }
 
 VKAPI_ATTR VkBool32 VKAPI_CALL RendererBase::debugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity, VkDebugUtilsMessageTypeFlagsEXT messageType, const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData, void* pUserData) {
-    std::cerr << "validation layer: " << pCallbackData->pMessage << std::endl;
 
-    _DEBUG_BREAK;
+    if (messageSeverity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT)
+        AID_INFO(std::string("~ Vulkan validation layer: ") + std::string(pCallbackData->pMessage));
+    else if (messageSeverity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT)
+        AID_INFO(std::string("~ Vulkan validation layer: ") + std::string(pCallbackData->pMessage));
+    else if (messageSeverity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT)
+        AID_WARN(std::string("~ Vulkan validation layer: ") + std::string(pCallbackData->pMessage));
+    else if (messageSeverity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT)
+        AID_WARN(std::string("~ Vulkan validation layer: {}"), std::string(pCallbackData->pMessage));
 
     return VK_FALSE;
 }
@@ -767,6 +760,17 @@ void RendererBase::destroyDebugUtilsMessengerEXT(VkInstance instance, VkDebugUti
     }
 }
 
+void RendererBase::testDebugMessenger() {
+    VkDebugUtilsMessengerCallbackDataEXT debugInitMessage = {};
+    debugInitMessage.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CALLBACK_DATA_EXT;
+    debugInitMessage.pMessageIdName = "Initialization";
+    debugInitMessage.messageIdNumber = 0;
+    debugInitMessage.pMessage = "Debug messenger initialized!";
+
+    auto func = (PFN_vkSubmitDebugUtilsMessageEXT)vkGetInstanceProcAddr(instance, "vkSubmitDebugUtilsMessageEXT");
+    func(instance, VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT, VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT, &debugInitMessage);
+}
+
 bool RendererBase::isDeviceSuitable(VkPhysicalDevice device) {
     QueueFamilyIndices indices = findQueueFamilies(device);
 
@@ -860,9 +864,11 @@ std::vector<const char*> RendererBase::getRequiredExtensions() {
 
     std::vector<const char*> extensions(glfwExtensions, glfwExtensions + glfwExtensionCount);
 
-    if (enableValidationLayers) {
+    if (enableValidationLayers)
         extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
-    }
+
+    for (auto extension : instanceExtensions)
+        extensions.push_back(extension);
 
     return extensions;
 }

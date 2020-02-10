@@ -11,6 +11,13 @@
     try to start log entries with capital letters
 */
 
+/*
+	Example usage:
+	AID_INFO("swap chain image count = {}", imageCount);
+	formatting: https://fmt.dev/dev/syntax.html
+	https://github.com/fmtlib/fmt
+*/
+
 class Log {
 public:
     static void Init();
