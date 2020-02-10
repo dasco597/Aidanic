@@ -30,21 +30,21 @@ Aidanic::~Aidanic() { if (!cleanedUp) CleanUp(); }
 
 void Aidanic::Init() {
     Log::Init();
-    LOG_INFO("Logger initialized");
-    LOG_INFO("~ Initializing Aidanic...");
+    AID_INFO("Logger initialized");
+    AID_INFO("~ Initializing Aidanic...");
 
     windowSize[0] = _CONFIG::initialWindowSize[0];
     windowSize[1] = _CONFIG::initialWindowSize[1];
 
     ioInterface.Init(this, windowSize[0], windowSize[1]);
-    LOG_INFO("IO interface initialized");
+    AID_INFO("IO interface initialized");
 
     rendererRTX.Init(&ioInterface);
-    LOG_INFO("Vulkan renderer RTX initialized");
+    AID_INFO("Vulkan renderer RTX initialized");
 }
 
 void Aidanic::Loop() {
-    LOG_INFO("~ Entering main loop...");
+    AID_INFO("~ Entering main loop...");
     while (!quit && !ioInterface.WindowCloseCheck()) {
         // submit draw commands for this frame
         rendererRTX.DrawFrame(windowResized);
@@ -61,13 +61,13 @@ void Aidanic::ProcessInputs() {
 }
 
 void Aidanic::CleanUp() {
-    LOG_INFO("~ Shutting down Aidanic...");
+    AID_INFO("~ Shutting down Aidanic...");
 
     rendererRTX.CleanUp();
-    LOG_INFO("Vulkan renderer RTX cleaned up");
+    AID_INFO("Vulkan renderer RTX cleaned up");
 
     ioInterface.CleanUp();
-    LOG_INFO("IO interface cleaned up");
+    AID_INFO("IO interface cleaned up");
 
     cleanedUp = true;
 }

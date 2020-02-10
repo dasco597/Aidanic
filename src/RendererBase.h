@@ -19,12 +19,11 @@
 #include <string>
 
 // Check vulkan result macro
-#define _VK_CHECK_RESULT(result, ...) if (result != VK_SUCCESS) { LOG_ERROR(__VA_ARGS__); }
+#define _VK_CHECK_RESULT(result, ...) if (result != VK_SUCCESS) { AID_ERROR(__VA_ARGS__); }
 
 class IOInterface;
 
-class RendererBase
-{
+class RendererBase {
 public:
     void Init(IOInterface* ioInterface);
     void DrawFrame(bool framebufferResized);
@@ -69,6 +68,11 @@ protected:
     std::vector<VkFence> inFlightFences;
     std::vector<VkFence> imagesInFlight;
     size_t currentFrame = 0;
+
+    const std::vector<const char*> validationLayers = { "VK_LAYER_KHRONOS_validation" };
+
+    // virtual! must be initialized in child class
+    std::vector<const char*> deviceExtensions;
 
     struct QueueFamilyIndices {
         std::optional<uint32_t> graphicsFamily;

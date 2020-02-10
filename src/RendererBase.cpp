@@ -12,16 +12,6 @@
 
 #define ALLOCATOR nullptr
 
-// vulkan extension/validation layer config
-
-const std::vector<const char*> validationLayers = {
-    "VK_LAYER_KHRONOS_validation"
-};
-
-const std::vector<const char*> deviceExtensions = {
-    VK_KHR_SWAPCHAIN_EXTENSION_NAME
-};
-
 #ifdef NDEBUG
 const bool enableValidationLayers = false;
 #else
@@ -76,7 +66,7 @@ const std::vector<uint16_t> indices = {
 // INITIALIZATION
 
 void RendererBase::Init(IOInterface* ioInterface) {
-    LOG_INFO("Initializing vulkan renderer...");
+    AID_INFO("Initializing vulkan renderer...");
     this->ioInterface = ioInterface;
     createInstance();
     setupDebugMessenger();
@@ -98,7 +88,7 @@ void RendererBase::Init(IOInterface* ioInterface) {
 
 void RendererBase::createInstance() {
     if (enableValidationLayers && !checkValidationLayerSupport()) {
-        LOG_ERROR("validation layers requested, but not available!");
+        AID_ERROR("validation layers requested, but not available!");
     }
 
     VkApplicationInfo appInfo = {};
@@ -170,7 +160,7 @@ void RendererBase::pickPhysicalDevice() {
     vkEnumeratePhysicalDevices(instance, &deviceCount, nullptr);
 
     if (deviceCount == 0) {
-        LOG_ERROR("failed to find GPUs with Vulkan support!");
+        AID_ERROR("failed to find GPUs with Vulkan support!");
     }
 
     std::vector<VkPhysicalDevice> devices(deviceCount);
@@ -183,8 +173,12 @@ void RendererBase::pickPhysicalDevice() {
         }
     }
 
+    std::string extensionWarning = "vulkan extensions required by Aidanic: ";
+    for (const char* extension : deviceExtensions) extensionWarning += std::string(extension) + ", ";
+    AID_WARN(extensionWarning);
+
     if (physicalDevice == VK_NULL_HANDLE) {
-        LOG_ERROR("failed to find a suitable GPU!");
+        AID_ERROR("failed to find a suitable GPU!");
     }
 }
 
@@ -590,7 +584,7 @@ void RendererBase::createSyncObjects() {
         if (vkCreateSemaphore(device, &semaphoreInfo, nullptr, &imageAvailableSemaphores[i]) != VK_SUCCESS ||
             vkCreateSemaphore(device, &semaphoreInfo, nullptr, &renderFinishedSemaphores[i]) != VK_SUCCESS ||
             vkCreateFence(device, &fenceInfo, nullptr, &inFlightFences[i]) != VK_SUCCESS) {
-            LOG_ERROR("failed to create synchronization objects for a frame!");
+            AID_ERROR("failed to create synchronization objects for a frame!");
         }
     }
 }
@@ -607,7 +601,7 @@ void RendererBase::DrawFrame(bool framebufferResized) {
         recreateSwapChain();
         return;
     } else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
-        LOG_ERROR("failed to acquire swap chain image!");
+        AID_ERROR("failed to acquire swap chain image!");
     }
 
     if (imagesInFlight[imageIndex] != VK_NULL_HANDLE) {
@@ -634,7 +628,7 @@ void RendererBase::DrawFrame(bool framebufferResized) {
     vkResetFences(device, 1, &inFlightFences[currentFrame]);
 
     if (vkQueueSubmit(graphicsQueue, 1, &submitInfo, inFlightFences[currentFrame]) != VK_SUCCESS) {
-        LOG_ERROR("failed to submit draw command buffer!");
+        AID_ERROR("failed to submit draw command buffer!");
     }
 
     VkPresentInfoKHR presentInfo = {};
@@ -654,7 +648,7 @@ void RendererBase::DrawFrame(bool framebufferResized) {
     if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR || framebufferResized) {
         recreateSwapChain();
     } else if (result != VK_SUCCESS) {
-        LOG_ERROR("failed to present swap chain image!");
+        AID_ERROR("failed to present swap chain image!");
     }
 
     currentFrame = (currentFrame + 1) % _CONFIG::maxFramesInFlight;
@@ -685,10 +679,10 @@ VKAPI_ATTR VkBool32 VKAPI_CALL RendererBase::debugCallback(VkDebugUtilsMessageSe
 
 void RendererBase::CleanUp() {
     if (!initialized) {
-        LOG_WARN("Renderer not initialized, skipping renderer clean-up");
+        AID_WARN("Renderer not initialized, skipping renderer clean-up");
         return;
     }
-    LOG_INFO("Cleaning up Vulkan renderer...");
+    AID_INFO("Cleaning up Vulkan renderer...");
 
     vkDeviceWaitIdle(device);
     cleanupSwapChain();
@@ -915,7 +909,7 @@ std::vector<char> RendererBase::readFile(const std::string& filename) {
     std::ifstream file(filename, std::ios::ate | std::ios::binary);
 
     if (!file.is_open()) {
-        LOG_ERROR("failed to open file: " + filename);
+        AID_ERROR("failed to open file: " + filename);
     }
 
     size_t fileSize = (size_t)file.tellg();
@@ -937,7 +931,7 @@ VkShaderModule RendererBase::createShaderModule(const std::vector<char>& code) {
 
     VkShaderModule shaderModule;
     if (vkCreateShaderModule(device, &createInfo, nullptr, &shaderModule) != VK_SUCCESS) {
-        LOG_ERROR("failed to create shader module!");
+        AID_ERROR("failed to create shader module!");
     }
 
     return shaderModule;
@@ -951,7 +945,7 @@ void RendererBase::createBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkM
     bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
     if (vkCreateBuffer(device, &bufferInfo, nullptr, &buffer) != VK_SUCCESS) {
-        LOG_ERROR("failed to create buffer!");
+        AID_ERROR("failed to create buffer!");
     }
 
     VkMemoryRequirements memRequirements;
@@ -963,7 +957,7 @@ void RendererBase::createBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkM
     allocInfo.memoryTypeIndex = findMemoryType(memRequirements.memoryTypeBits, properties);
 
     if (vkAllocateMemory(device, &allocInfo, nullptr, &bufferMemory) != VK_SUCCESS) {
-        LOG_ERROR("failed to allocate buffer memory!");
+        AID_ERROR("failed to allocate buffer memory!");
     }
 
     vkBindBufferMemory(device, buffer, bufferMemory, 0);
@@ -1012,5 +1006,5 @@ uint32_t RendererBase::findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags
         }
     }
 
-    LOG_ERROR("failed to find suitable memory type!");
+    AID_ERROR("failed to find suitable memory type!");
 }

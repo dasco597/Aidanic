@@ -3,7 +3,7 @@
 
 #ifdef _DEBUG
 
-    // allows printing of LOG_TRACE and LOG_INFO
+    // allows printing of LOG_TRACE and AID_INFO
     #define _VERBOSE_OUTPUT
 
     // allows debug breaks

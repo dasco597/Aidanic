@@ -3,7 +3,7 @@
 #include "tools/Log.h"
 
 void IOInterface::Init(Aidanic* application, uint32_t width, uint32_t height) {
-    LOG_INFO("Initializing interface...");
+    AID_INFO("Initializing interface...");
     windowSize[0] = width;
     windowSize[1] = height;
     if (window) CleanUp();
@@ -42,7 +42,7 @@ uint32_t IOInterface::GetInputs() {
 }
 
 void IOInterface::CleanUp() {
-    LOG_INFO("Cleaning up ioInterface/GLFW...");
+    AID_INFO("Cleaning up ioInterface/GLFW...");
     glfwDestroyWindow(window);
     glfwTerminate();
     window = nullptr;
