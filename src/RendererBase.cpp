@@ -68,6 +68,7 @@ const std::vector<uint16_t> indices = {
 void RendererBase::Init(IOInterface* ioInterface) {
     AID_INFO("Initializing vulkan renderer...");
     this->ioInterface = ioInterface;
+    setDeviceExtensions();
     createInstance();
     setupDebugMessenger();
     createSurface();

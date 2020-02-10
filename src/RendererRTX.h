@@ -2,6 +2,6 @@
 
 #include "RendererBase.h"
 
-class RendererRTX: public RendererBase {
-    RendererRTX();
+class RendererRTX : public RendererBase {
+    void setDeviceExtensions();
 };

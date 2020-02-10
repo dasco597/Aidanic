@@ -1,4 +1,6 @@
 
+project(Aidanic VERSION 0.1)
+
 file(GLOB_RECURSE HEADERS ${CMAKE_CURRENT_SOURCE_DIR}/*.h)
 file(GLOB_RECURSE SOURCE  ${CMAKE_CURRENT_SOURCE_DIR}/*.cpp)
 file(GLOB_RECURSE SHADERS ${CMAKE_CURRENT_SOURCE_DIR}/shaders/*.rgen
@@ -28,6 +30,6 @@ add_custom_target(Aidanic_Shaders DEPENDS ${SPIRV_BINARY_FILES})
 add_dependencies(Aidanic Aidanic_Shaders)
 
 # visual studio config
-source_group("shaders" FILES ${SHADERS})
+source_group("shaders" FILES ${SHADERS})	
 set_property(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT Aidanic)
 set_property(TARGET Aidanic PROPERTY VS_DEBUGGER_WORKING_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/$(Configuration)")

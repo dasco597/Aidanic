@@ -71,8 +71,8 @@ protected:
 
     const std::vector<const char*> validationLayers = { "VK_LAYER_KHRONOS_validation" };
 
-    // virtual! must be initialized in child class
-    std::vector<const char*> deviceExtensions;
+    std::vector<const char*> deviceExtensions = { "VK_KHR_swapchain" };
+    virtual void addDeviceExtensions() = 0; // child class must add extensions that are required
 
     struct QueueFamilyIndices {
         std::optional<uint32_t> graphicsFamily;

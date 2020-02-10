@@ -1,6 +1,5 @@
 #include "RendererRTX.h"
 
-RendererRTX::RendererRTX() {
-    deviceExtensions.push_back("VK_KHR_swapchain");
+void RendererRTX::addDeviceExtensions() {
     deviceExtensions.push_back("VK_NV_ray_tracing");
 }
