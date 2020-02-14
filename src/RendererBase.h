@@ -19,7 +19,10 @@
 #include <string>
 
 // Check vulkan result macro
-#define _VK_CHECK_RESULT(result, ...) if (result != VK_SUCCESS) { AID_ERROR(__VA_ARGS__); }
+#define VK_CHECK_RESULT(result, ...) if (result != VK_SUCCESS) { AID_ERROR(__VA_ARGS__); }
+
+// Vulkan allocator
+#define VK_ALLOCATOR nullptr
 
 class IOInterface;
 
@@ -60,6 +63,7 @@ protected:
     VkDeviceMemory vertexBufferMemory;
     VkBuffer indexBuffer;
     VkDeviceMemory indexBufferMemory;
+    uint32_t indexCount = 0;
 
     std::vector<VkCommandBuffer> commandBuffers;
 

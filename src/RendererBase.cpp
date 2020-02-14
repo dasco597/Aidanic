@@ -10,8 +10,6 @@
 #include <set>
 #include <fstream>
 
-#define ALLOCATOR nullptr
-
 #ifdef NDEBUG
 const bool enableValidationLayers = false;
 #else
@@ -125,7 +123,7 @@ void RendererBase::createInstance() {
         createInfo.pNext = nullptr;
     }
 
-    _VK_CHECK_RESULT(vkCreateInstance(&createInfo, ALLOCATOR, &instance), "failed to create instance!");
+    VK_CHECK_RESULT(vkCreateInstance(&createInfo, VK_ALLOCATOR, &instance), "failed to create instance!");
 }
 
 void RendererBase::setupDebugMessenger() {
@@ -137,11 +135,11 @@ void RendererBase::setupDebugMessenger() {
     createInfo.messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
     createInfo.pfnUserCallback = debugCallback;
 
-    _VK_CHECK_RESULT(createDebugUtilsMessengerEXT(instance, &createInfo, ALLOCATOR, &debugMessenger), "failed to set up debug messenger!");
+    VK_CHECK_RESULT(createDebugUtilsMessengerEXT(instance, &createInfo, VK_ALLOCATOR, &debugMessenger), "failed to set up debug messenger!");
 }
 
 void RendererBase::createSurface() {
-    _VK_CHECK_RESULT(glfwCreateWindowSurface(instance, ioInterface->GetWindow(), nullptr, &surface), "failed to create window surface!");
+    VK_CHECK_RESULT(glfwCreateWindowSurface(instance, ioInterface->GetWindow(), nullptr, &surface), "failed to create window surface!");
 }
 
 void RendererBase::pickPhysicalDevice() {
@@ -171,10 +169,10 @@ void RendererBase::pickPhysicalDevice() {
 }
 
 void RendererBase::createLogicalDevice() {
-    QueueFamilyIndices indices = findQueueFamilies(physicalDevice);
+    QueueFamilyIndices queueIndices = findQueueFamilies(physicalDevice);
 
     std::vector<VkDeviceQueueCreateInfo> queueCreateInfos;
-    std::set<uint32_t> uniqueQueueFamilies = { indices.graphicsFamily.value(), indices.presentFamily.value() };
+    std::set<uint32_t> uniqueQueueFamilies = { queueIndices.graphicsFamily.value(), queueIndices.presentFamily.value() };
 
     float queuePriority = 1.0f;
     for (uint32_t queueFamily : uniqueQueueFamilies) {
@@ -206,10 +204,10 @@ void RendererBase::createLogicalDevice() {
         createInfo.enabledLayerCount = 0;
     }
 
-    _VK_CHECK_RESULT(vkCreateDevice(physicalDevice, &createInfo, nullptr, &device), "failed to create logical device!");
+    VK_CHECK_RESULT(vkCreateDevice(physicalDevice, &createInfo, nullptr, &device), "failed to create logical device!");
 
-    vkGetDeviceQueue(device, indices.graphicsFamily.value(), 0, &graphicsQueue);
-    vkGetDeviceQueue(device, indices.presentFamily.value(), 0, &presentQueue);
+    vkGetDeviceQueue(device, queueIndices.graphicsFamily.value(), 0, &graphicsQueue);
+    vkGetDeviceQueue(device, queueIndices.presentFamily.value(), 0, &presentQueue);
 }
 
 void RendererBase::createSwapChain() {
@@ -235,10 +233,10 @@ void RendererBase::createSwapChain() {
     createInfo.imageArrayLayers = 1;
     createInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
 
-    QueueFamilyIndices indices = findQueueFamilies(physicalDevice);
-    uint32_t queueFamilyIndices[] = { indices.graphicsFamily.value(), indices.presentFamily.value() };
+    QueueFamilyIndices queueIndices = findQueueFamilies(physicalDevice);
+    uint32_t queueFamilyIndices[] = { queueIndices.graphicsFamily.value(), queueIndices.presentFamily.value() };
 
-    if (indices.graphicsFamily != indices.presentFamily) {
+    if (queueIndices.graphicsFamily != queueIndices.presentFamily) {
         createInfo.imageSharingMode = VK_SHARING_MODE_CONCURRENT;
         createInfo.queueFamilyIndexCount = 2;
         createInfo.pQueueFamilyIndices = queueFamilyIndices;
@@ -251,7 +249,7 @@ void RendererBase::createSwapChain() {
     createInfo.presentMode = presentMode;
     createInfo.clipped = VK_TRUE;
 
-    _VK_CHECK_RESULT(vkCreateSwapchainKHR(device, &createInfo, nullptr, &swapChain), "failed to create swap chain!");
+    VK_CHECK_RESULT(vkCreateSwapchainKHR(device, &createInfo, nullptr, &swapChain), "failed to create swap chain!");
 
     vkGetSwapchainImagesKHR(device, swapChain, &imageCount, nullptr);
     swapChainImages.resize(imageCount);
@@ -280,7 +278,7 @@ void RendererBase::createImageViews() {
         createInfo.subresourceRange.baseArrayLayer = 0;
         createInfo.subresourceRange.layerCount = 1;
 
-        _VK_CHECK_RESULT(vkCreateImageView(device, &createInfo, nullptr, &swapChainImageViews[i]), "failed to create image views!");
+        VK_CHECK_RESULT(vkCreateImageView(device, &createInfo, nullptr, &swapChainImageViews[i]), "failed to create image views!");
     }
 }
 
@@ -321,7 +319,7 @@ void RendererBase::createRenderPass() {
     renderPassInfo.dependencyCount = 1;
     renderPassInfo.pDependencies = &dependency;
 
-    _VK_CHECK_RESULT(vkCreateRenderPass(device, &renderPassInfo, nullptr, &renderPass), "failed to create render pass!");
+    VK_CHECK_RESULT(vkCreateRenderPass(device, &renderPassInfo, nullptr, &renderPass), "failed to create render pass!");
 }
 
 void RendererBase::createGraphicsPipeline() {
@@ -415,7 +413,7 @@ void RendererBase::createGraphicsPipeline() {
     pipelineLayoutInfo.setLayoutCount = 0;
     pipelineLayoutInfo.pushConstantRangeCount = 0;
 
-    _VK_CHECK_RESULT(vkCreatePipelineLayout(device, &pipelineLayoutInfo, nullptr, &pipelineLayout), "failed to create pipeline layout!");
+    VK_CHECK_RESULT(vkCreatePipelineLayout(device, &pipelineLayoutInfo, nullptr, &pipelineLayout), "failed to create pipeline layout!");
 
     VkGraphicsPipelineCreateInfo pipelineInfo = {};
     pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
@@ -432,7 +430,7 @@ void RendererBase::createGraphicsPipeline() {
     pipelineInfo.subpass = 0;
     pipelineInfo.basePipelineHandle = VK_NULL_HANDLE;
 
-    _VK_CHECK_RESULT(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &graphicsPipeline), "failed to create graphics pipeline!");
+    VK_CHECK_RESULT(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &graphicsPipeline), "failed to create graphics pipeline!");
 
     vkDestroyShaderModule(device, fragShaderModule, nullptr);
     vkDestroyShaderModule(device, vertShaderModule, nullptr);
@@ -455,7 +453,7 @@ void RendererBase::createFramebuffers() {
         framebufferInfo.height = swapChainExtent.height;
         framebufferInfo.layers = 1;
 
-        _VK_CHECK_RESULT(vkCreateFramebuffer(device, &framebufferInfo, nullptr, &swapChainFramebuffers[i]), "failed to create framebuffer!");
+        VK_CHECK_RESULT(vkCreateFramebuffer(device, &framebufferInfo, nullptr, &swapChainFramebuffers[i]), "failed to create framebuffer!");
     }
 }
 
@@ -466,7 +464,7 @@ void RendererBase::createCommandPool() {
     poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
     poolInfo.queueFamilyIndex = queueFamilyIndices.graphicsFamily.value();
 
-    _VK_CHECK_RESULT(vkCreateCommandPool(device, &poolInfo, nullptr, &commandPool), "failed to create graphics command pool!");
+    VK_CHECK_RESULT(vkCreateCommandPool(device, &poolInfo, nullptr, &commandPool), "failed to create graphics command pool!");
 }
 
 void RendererBase::createVertexBuffer() {
@@ -490,7 +488,8 @@ void RendererBase::createVertexBuffer() {
 }
 
 void RendererBase::createIndexBuffer() {
-    VkDeviceSize bufferSize = sizeof(indices[0]) * indices.size();
+    indexCount = indices.size();
+    VkDeviceSize bufferSize = sizeof(indices[0]) * indexCount;
 
     VkBuffer stagingBuffer;
     VkDeviceMemory stagingBufferMemory;
@@ -518,13 +517,13 @@ void RendererBase::createCommandBuffers() {
     allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
     allocInfo.commandBufferCount = (uint32_t)commandBuffers.size();
 
-    _VK_CHECK_RESULT(vkAllocateCommandBuffers(device, &allocInfo, commandBuffers.data()), "failed to allocate command buffers!");
+    VK_CHECK_RESULT(vkAllocateCommandBuffers(device, &allocInfo, commandBuffers.data()), "failed to allocate command buffers!");
 
     for (size_t i = 0; i < commandBuffers.size(); i++) {
         VkCommandBufferBeginInfo beginInfo = {};
         beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
 
-        _VK_CHECK_RESULT(vkBeginCommandBuffer(commandBuffers[i], &beginInfo), "failed to begin recording command buffer!");
+        VK_CHECK_RESULT(vkBeginCommandBuffer(commandBuffers[i], &beginInfo), "failed to begin recording command buffer!");
 
         VkRenderPassBeginInfo renderPassInfo = {};
         renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
@@ -551,7 +550,7 @@ void RendererBase::createCommandBuffers() {
 
         vkCmdEndRenderPass(commandBuffers[i]);
 
-        _VK_CHECK_RESULT(vkEndCommandBuffer(commandBuffers[i]), "failed to record command buffer!");
+        VK_CHECK_RESULT(vkEndCommandBuffer(commandBuffers[i]), "failed to record command buffer!");
     }
 }
 
@@ -681,42 +680,42 @@ void RendererBase::CleanUp() {
     vkDeviceWaitIdle(device);
     cleanupSwapChain();
 
-    vkDestroyBuffer(device, indexBuffer, ALLOCATOR);
-    vkFreeMemory(device, indexBufferMemory, ALLOCATOR);
+    vkDestroyBuffer(device, indexBuffer, VK_ALLOCATOR);
+    vkFreeMemory(device, indexBufferMemory, VK_ALLOCATOR);
 
-    vkDestroyBuffer(device, vertexBuffer, ALLOCATOR);
-    vkFreeMemory(device, vertexBufferMemory, ALLOCATOR);
+    vkDestroyBuffer(device, vertexBuffer, VK_ALLOCATOR);
+    vkFreeMemory(device, vertexBufferMemory, VK_ALLOCATOR);
 
     for (size_t i = 0; i < _CONFIG::maxFramesInFlight; i++) {
-        vkDestroySemaphore(device, renderFinishedSemaphores[i], ALLOCATOR);
-        vkDestroySemaphore(device, imageAvailableSemaphores[i], ALLOCATOR);
-        vkDestroyFence(device, inFlightFences[i], ALLOCATOR);
+        vkDestroySemaphore(device, renderFinishedSemaphores[i], VK_ALLOCATOR);
+        vkDestroySemaphore(device, imageAvailableSemaphores[i], VK_ALLOCATOR);
+        vkDestroyFence(device, inFlightFences[i], VK_ALLOCATOR);
     }
 
-    vkDestroyCommandPool(device, commandPool, ALLOCATOR);
+    vkDestroyCommandPool(device, commandPool, VK_ALLOCATOR);
 
-    vkDestroyDevice(device, ALLOCATOR);
+    vkDestroyDevice(device, VK_ALLOCATOR);
 
     if (enableValidationLayers) {
-        destroyDebugUtilsMessengerEXT(instance, debugMessenger, ALLOCATOR);
+        destroyDebugUtilsMessengerEXT(instance, debugMessenger, VK_ALLOCATOR);
     }
 
-    vkDestroySurfaceKHR(instance, surface, ALLOCATOR);
-    vkDestroyInstance(instance, ALLOCATOR);
+    vkDestroySurfaceKHR(instance, surface, VK_ALLOCATOR);
+    vkDestroyInstance(instance, VK_ALLOCATOR);
 }
 
 void RendererBase::cleanupSwapChain() {
-    for (auto framebuffer : swapChainFramebuffers) vkDestroyFramebuffer(device, framebuffer, ALLOCATOR);
+    for (auto framebuffer : swapChainFramebuffers) vkDestroyFramebuffer(device, framebuffer, VK_ALLOCATOR);
 
     vkFreeCommandBuffers(device, commandPool, static_cast<uint32_t>(commandBuffers.size()), commandBuffers.data());
 
-    vkDestroyPipeline(device, graphicsPipeline, ALLOCATOR);
-    vkDestroyPipelineLayout(device, pipelineLayout, ALLOCATOR);
-    vkDestroyRenderPass(device, renderPass, ALLOCATOR);
+    vkDestroyPipeline(device, graphicsPipeline, VK_ALLOCATOR);
+    vkDestroyPipelineLayout(device, pipelineLayout, VK_ALLOCATOR);
+    vkDestroyRenderPass(device, renderPass, VK_ALLOCATOR);
 
-    for (auto imageView : swapChainImageViews) vkDestroyImageView(device, imageView, ALLOCATOR);
+    for (auto imageView : swapChainImageViews) vkDestroyImageView(device, imageView, VK_ALLOCATOR);
 
-    vkDestroySwapchainKHR(device, swapChain, ALLOCATOR);
+    vkDestroySwapchainKHR(device, swapChain, VK_ALLOCATOR);
 }
 
 // HELPER FUNCTIONS
