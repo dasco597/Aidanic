@@ -59,10 +59,8 @@ protected:
 
     VkCommandPool commandPool;
 
-    VkBuffer vertexBuffer;
-    VkDeviceMemory vertexBufferMemory;
-    VkBuffer indexBuffer;
-    VkDeviceMemory indexBufferMemory;
+    VkBuffer vertexBuffer, indexBuffer;
+    VkDeviceMemory vertexBufferMemory, indexBufferMemory;
     uint32_t indexCount = 0;
 
     std::vector<VkCommandBuffer> commandBuffers;
@@ -107,8 +105,8 @@ protected:
     void createGraphicsPipeline();
     void createFramebuffers();
     void createCommandPool();
-    void createVertexBuffer();
-    void createIndexBuffer();
+    //void createVertexBuffer();
+    //void createIndexBuffer();
     void createCommandBuffers();
     void createSyncObjects();
 
@@ -138,7 +136,7 @@ protected:
     static std::vector<char> readFile(const std::string& filename);
     VkShaderModule createShaderModule(const std::vector<char>& code);
 
-    void createBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkBuffer& buffer, VkDeviceMemory& bufferMemory);
+    void createBuffer(VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkBuffer& buffer, VkDeviceMemory& bufferMemory, VkDeviceSize size, void* dataSrc = nullptr);
     void copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size);
     uint32_t findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties);
 };
