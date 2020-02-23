@@ -23,16 +23,18 @@
 
 // Vulkan allocator
 #define VK_ALLOCATOR nullptr
+#define DEFAULT_FENCE_TIMEOUT 100000000000
 
 class IOInterface;
 
 class RendererBase {
 public:
-    void Init(IOInterface* ioInterface);
     void DrawFrame(bool framebufferResized);
     void CleanUp();
 
 protected:
+    void init(IOInterface* ioInterface);
+
     IOInterface* ioInterface;
     bool initialized = false;
     
@@ -100,15 +102,16 @@ protected:
     void pickPhysicalDevice();
     void createLogicalDevice();
     void createSwapChain();
-    void createImageViews();
-    void createRenderPass();
-    void createGraphicsPipeline();
     void createFramebuffers();
     void createCommandPool();
+
+    //void createImageViews();
+    //void createRenderPass();
+    //void createGraphicsPipeline();
     //void createVertexBuffer();
     //void createIndexBuffer();
-    void createCommandBuffers();
-    void createSyncObjects();
+    //void createCommandBuffers();
+    //void createSyncObjects();
 
     // main loop
     void recreateSwapChain();
@@ -133,11 +136,15 @@ protected:
     VkPresentModeKHR chooseSwapPresentMode(const std::vector<VkPresentModeKHR>& availablePresentModes);
     VkExtent2D chooseSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities);
 
-    static std::vector<char> readFile(const std::string& filename);
+    static std::vector<char> readFile(const std::string filename);
     VkShaderModule createShaderModule(const std::vector<char>& code);
+    VkPipelineShaderStageCreateInfo loadShader(const std::string filename, VkShaderStageFlagBits stage);
 
     void createBuffer(VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkBuffer& buffer, VkDeviceMemory& bufferMemory, VkDeviceSize size, void* dataSrc = nullptr);
     void copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size);
     uint32_t findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties);
+
+    VkCommandBuffer beginSingleTimeCommands();
+    void endSingleTimeCommands(VkCommandBuffer commandBuffer);
 };
 

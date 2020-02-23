@@ -3,6 +3,10 @@
 #include "RendererBase.h"
 
 class RendererRTX : public RendererBase {
+public:
+	void Init(IOInterface* ioInterface);
+	// todo clean-up
+
 private:
 
 	struct StorageImage {
@@ -31,12 +35,32 @@ private:
 	StorageImage renderImage;
 	AccelerationStructure bottomLevelAS, topLevelAS;
 
-	// todo init
-	// todo clean-up
+	struct {
+		glm::mat4 viewInverse = glm::mat4(1.0f);
+		glm::mat4 projInverse = glm::mat4(1.0f);
+	} uniformData;
+
+	struct {
+		VkBuffer buffer;
+		VkDeviceMemory memory;
+		void* mapping = nullptr;
+	} ubo;
+
+	VkPipeline pipeline;
+	VkPipelineLayout pipelineLayout;
+	VkDescriptorSet descriptorSet;
+	VkDescriptorSetLayout descriptorSetLayout;
+
     void addDeviceExtensions();
 
     void createRenderImage(); // create the storage image the ray gen shader will be writing to
 	void createScene(); // create scene geometry and acceleration structures
+	void createUniformBuffer();
+	void createRayTracingPipeline();
+	void createShaderBindingTable();
+	void createDescriptorSets();
+	void buildCommandBuffers();
+	
 	void createBottomLevelAccelerationStructure(const VkGeometryNV* geometries); // bottom level AS contains scene geometry
 	void createTopLevelAccelerationStructure(); // top level AS contains the scene's object (BLAS) instances
 };

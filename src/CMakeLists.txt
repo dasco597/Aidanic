@@ -17,7 +17,7 @@ target_link_libraries(Aidanic ${Vulkan_LIBRARY})
 set(GLSL_VALIDATOR "$ENV{VULKAN_SDK}/Bin/glslangValidator.exe")
 foreach(GLSL ${SHADERS})
     get_filename_component(FILE_NAME ${GLSL} NAME)
-    set(SPIRV ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/$(Configuration)/shaders/${FILE_NAME}.spv)
+    set(SPIRV ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/$(Configuration)/assets/spirv/${FILE_NAME}.spv)
     add_custom_command(
         OUTPUT ${SPIRV}
         COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/$(Configuration)/shaders"
