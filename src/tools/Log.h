@@ -33,11 +33,12 @@ private:
 #ifdef _VERBOSE_OUTPUT
 #define AID_TRACE(...)  Log::GetLogger()->trace(__VA_ARGS__)
 #define AID_INFO(...)   Log::GetLogger()->info(__VA_ARGS__)
-#else
+#else // _VERBOSE_OUTPUT
 #define AID_TRACE(...)
 #define AID_INFO(...)
-#endif
+#endif // _VERBOSE_OUTPUT
 #define AID_WARN(...)   Log::GetLogger()->warn(__VA_ARGS__)
-#define AID_ERROR(...)  Log::GetLogger()->error("ERROR - " + std::string(__FILE__) + " [line: " + std::to_string(__LINE__) + "]\n" + __VA_ARGS__);\
-    _DEBUG_BREAK; throw std::runtime_error("Aidanic crashed! See above error message")
+#define AID_ERROR(...)  Log::GetLogger()->error("ERROR - " + std::string(__FILE__) + \
+    " [line: " + std::to_string(__LINE__) + "]\n" + __VA_ARGS__); _DEBUG_BREAK;      \
+    throw std::runtime_error("Aidanic crashed! See above error message")
 #define AID_FATAL(...)  Log::GetLogger()->fatal(__VA_ARGS__)

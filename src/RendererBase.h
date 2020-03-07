@@ -29,55 +29,19 @@ class IOInterface;
 
 class RendererBase {
 public:
-    void DrawFrame(bool framebufferResized);
-    void CleanUp();
 
 protected:
-    void init(IOInterface* ioInterface);
+    void initBase(IOInterface* ioInterface);
+    void drawFrameBase(bool framebufferResized);
+    void cleanUpBase();
 
-    IOInterface* ioInterface;
-    bool initialized = false;
-    
-    VkInstance instance;
-    VkDebugUtilsMessengerEXT debugMessenger;
-    VkSurfaceKHR surface;
-
-    VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
-    VkDevice device;
-
-    VkQueue graphicsQueue;
-    VkQueue presentQueue;
-
-    VkSwapchainKHR swapChain;
-    std::vector<VkImage> swapChainImages;
-    VkFormat swapChainImageFormat;
-    VkExtent2D swapChainExtent;
-    std::vector<VkImageView> swapChainImageViews;
-    std::vector<VkFramebuffer> swapChainFramebuffers;
-
-    VkRenderPass renderPass;
-    VkPipelineLayout pipelineLayout;
-    VkPipeline graphicsPipeline;
-
-    VkCommandPool commandPool;
-
-    VkBuffer vertexBuffer, indexBuffer;
-    VkDeviceMemory vertexBufferMemory, indexBufferMemory;
-    uint32_t indexCount = 0;
-
-    std::vector<VkCommandBuffer> commandBuffers;
-
-    std::vector<VkSemaphore> imageAvailableSemaphores;
-    std::vector<VkSemaphore> renderFinishedSemaphores;
-    std::vector<VkFence> inFlightFences;
-    std::vector<VkFence> imagesInFlight;
-    size_t currentFrame = 0;
-
-    const std::vector<const char*> validationLayers = { "VK_LAYER_KHRONOS_validation" };
-
-    std::vector<const char*> deviceExtensions = { VK_KHR_SWAPCHAIN_EXTENSION_NAME };
-    std::vector<const char*> instanceExtensions = {};
-    virtual void addDeviceExtensions() = 0; // child class adds other extensions that are required
+    struct Buffer {
+        // todo make fully functioning buffer class
+        VkBuffer buffer;
+        VkDeviceMemory memory;
+        VkDeviceSize size = 0;
+        void* mapping = nullptr;
+    };
 
     struct QueueFamilyIndices {
         std::optional<uint32_t> graphicsFamily;
@@ -94,6 +58,55 @@ protected:
         std::vector<VkPresentModeKHR> presentModes;
     };
 
+    IOInterface* ioInterface;
+    bool _initialized = false;
+    
+    VkInstance instance;
+    VkDebugUtilsMessengerEXT debugMessenger;
+    VkSurfaceKHR surface;
+
+    VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
+    VkDevice device;
+
+    struct {
+        VkQueue graphics;
+        VkQueue present;
+    } queues;
+
+    struct {
+        VkSwapchainKHR swapchain;
+        std::vector<VkImage> images;
+        int numImages = 0;
+        VkFormat imageFormat;
+        VkExtent2D extent;
+        std::vector<VkImageView> imageViews;
+        std::vector<VkFramebuffer> framebuffers;
+    } swapchain;
+
+    uint32_t width = 0, height = 0;
+
+    VkRenderPass renderPass;
+    VkPipelineLayout pipelineLayout;
+    VkPipeline graphicsPipeline;
+
+    VkCommandPool commandPool;
+
+    Buffer vertexBuffer, indexBuffer;
+    uint32_t indexCount = 0;
+
+    std::vector<VkCommandBuffer> commandBuffers;
+
+    std::vector<VkSemaphore> imageAvailableSemaphores;
+    std::vector<VkSemaphore> renderFinishedSemaphores;
+    std::vector<VkFence> inFlightFences;
+    std::vector<VkFence> imagesInFlight;
+    size_t _currentFrame = 0;
+
+    const std::vector<const char*> validationLayers = { "VK_LAYER_KHRONOS_validation" };
+
+    std::vector<const char*> deviceExtensions = { VK_KHR_SWAPCHAIN_EXTENSION_NAME };
+    std::vector<const char*> instanceExtensions = {};
+    virtual void addDeviceExtensions() = 0; // child class adds other extensions that are required
 
     // initialization functions
     void createInstance();
@@ -104,8 +117,8 @@ protected:
     void createSwapChain();
     void createFramebuffers();
     void createCommandPool();
-
-    //void createImageViews();
+    void createImageViews();
+    
     //void createRenderPass();
     //void createGraphicsPipeline();
     //void createVertexBuffer();
@@ -140,11 +153,14 @@ protected:
     VkShaderModule createShaderModule(const std::vector<char>& code);
     VkPipelineShaderStageCreateInfo loadShader(const std::string filename, VkShaderStageFlagBits stage);
 
-    void createBuffer(VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkBuffer& buffer, VkDeviceMemory& bufferMemory, VkDeviceSize size, void* dataSrc = nullptr);
+    void createBuffer(Buffer buffer, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkDeviceSize size);
+    void uploadBuffer(Buffer buffer, VkDeviceSize size, void* dataSrc = nullptr);
     void copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size);
     uint32_t findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties);
 
     VkCommandBuffer beginSingleTimeCommands();
     void endSingleTimeCommands(VkCommandBuffer commandBuffer);
+    void recordImageLayoutTransition(VkCommandBuffer& commandBuffer, VkImage image, VkImageLayout oldImageLayout, VkImageLayout newImageLayout,
+        VkImageSubresourceRange subresourceRange, VkPipelineStageFlags srcStageMask = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VkPipelineStageFlags dstStageMask = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT);
 };
 

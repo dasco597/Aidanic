@@ -17,7 +17,12 @@
 #endif // _DEBUG
 
 namespace AIDANIC_CONFIG {
+    // general
+
     const uint32_t initialWindowSize[2] = { 800, 600 };
+
+    // renderer
+
     const int maxFramesInFlight = 2;
 
     char* getAssetPath() {

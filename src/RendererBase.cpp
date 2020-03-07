@@ -18,7 +18,7 @@ const bool enableValidationLayers = true;
 
 // INITIALIZATION
 
-void RendererBase::init(IOInterface* ioInterface) {
+void RendererBase::initBase(IOInterface* ioInterface) {
     AID_INFO("Initializing vulkan renderer...");
     this->ioInterface = ioInterface;
     addDeviceExtensions();
@@ -202,22 +202,25 @@ void RendererBase::createSwapChain() {
     createInfo.presentMode = presentMode;
     createInfo.clipped = VK_TRUE;
 
-    VK_CHECK_RESULT(vkCreateSwapchainKHR(device, &createInfo, nullptr, &swapChain), "failed to create swap chain!");
+    VK_CHECK_RESULT(vkCreateSwapchainKHR(device, &createInfo, nullptr, &swapchain.swapchain), "failed to create swap chain!");
 
-    vkGetSwapchainImagesKHR(device, swapChain, &imageCount, nullptr);
-    swapChainImages.resize(imageCount);
-    vkGetSwapchainImagesKHR(device, swapChain, &imageCount, swapChainImages.data());
+    vkGetSwapchainImagesKHR(device, swapchain.swapchain, &imageCount, nullptr);
+    swapchain.images.resize(imageCount);
+    vkGetSwapchainImagesKHR(device, swapchain.swapchain, &imageCount, swapchain.images.data());
+    swapchain.numImages = imageCount;
 
-    swapChainImageFormat = surfaceFormat.format;
-    swapChainExtent = extent;
+    swapchain.imageFormat = surfaceFormat.format;
+    swapchain.extent = extent;
+    width = extent.width;
+    height = extent.height;
 }
 
 void RendererBase::createFramebuffers() {
-    swapChainFramebuffers.resize(swapChainImageViews.size());
+    swapchain.framebuffers.resize(swapchain.imageViews.size());
 
-    for (size_t i = 0; i < swapChainImageViews.size(); i++) {
+    for (size_t i = 0; i < swapchain.imageViews.size(); i++) {
         VkImageView attachments[] = {
-            swapChainImageViews[i]
+            swapchain.imageViews[i]
         };
 
         VkFramebufferCreateInfo framebufferInfo = {};
@@ -225,11 +228,11 @@ void RendererBase::createFramebuffers() {
         framebufferInfo.renderPass = renderPass;
         framebufferInfo.attachmentCount = 1;
         framebufferInfo.pAttachments = attachments;
-        framebufferInfo.width = swapChainExtent.width;
-        framebufferInfo.height = swapChainExtent.height;
+        framebufferInfo.width = swapchain.extent.width;
+        framebufferInfo.height = swapchain.extent.height;
         framebufferInfo.layers = 1;
 
-        VK_CHECK_RESULT(vkCreateFramebuffer(device, &framebufferInfo, nullptr, &swapChainFramebuffers[i]), "failed to create framebuffer!");
+        VK_CHECK_RESULT(vkCreateFramebuffer(device, &framebufferInfo, nullptr, &swapchain.framebuffers[i]), "failed to create framebuffer!");
     }
 }
 
@@ -244,14 +247,14 @@ void RendererBase::createCommandPool() {
 }
 
 void RendererBase::createImageViews() {
-    swapChainImageViews.resize(swapChainImages.size());
+    swapchain.imageViews.resize(swapchain.numImages);
 
-    for (size_t i = 0; i < swapChainImages.size(); i++) {
+    for (size_t i = 0; i < swapchain.numImages; i++) {
         VkImageViewCreateInfo createInfo = {};
         createInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-        createInfo.image = swapChainImages[i];
+        createInfo.image = swapchain.images[i];
         createInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
-        createInfo.format = swapChainImageFormat;
+        createInfo.format = swapchain.imageFormat;
         createInfo.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
         createInfo.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
         createInfo.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
@@ -262,13 +265,13 @@ void RendererBase::createImageViews() {
         createInfo.subresourceRange.baseArrayLayer = 0;
         createInfo.subresourceRange.layerCount = 1;
 
-        VK_CHECK_RESULT(vkCreateImageView(device, &createInfo, nullptr, &swapChainImageViews[i]), "failed to create image views!");
+        VK_CHECK_RESULT(vkCreateImageView(device, &createInfo, nullptr, &swapchain.imageViews[i]), "failed to create image views!");
     }
 }
 
 void RendererBase::createRenderPass() {
     VkAttachmentDescription colorAttachment = {};
-    colorAttachment.format = swapChainImageFormat;
+    colorAttachment.format = swapchain.imageFormat;
     colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
     colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
     colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
@@ -346,14 +349,14 @@ void RendererBase::createGraphicsPipeline() {
     VkViewport viewport = {};
     viewport.x = 0.0f;
     viewport.y = 0.0f;
-    viewport.width = (float)swapChainExtent.width;
-    viewport.height = (float)swapChainExtent.height;
+    viewport.width = (float)swapchain.extent.width;
+    viewport.height = (float)swapchain.extent.height;
     viewport.minDepth = 0.0f;
     viewport.maxDepth = 1.0f;
 
     VkRect2D scissor = {};
     scissor.offset = { 0, 0 };
-    scissor.extent = swapChainExtent;
+    scissor.extent = swapchain.extent;
 
     VkPipelineViewportStateCreateInfo viewportState = {};
     viewportState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
@@ -421,7 +424,7 @@ void RendererBase::createGraphicsPipeline() {
 }
 
 void RendererBase::createCommandBuffers() {
-    commandBuffers.resize(swapChainFramebuffers.size());
+    commandBuffers.resize(swapchain.framebuffers.size());
 
     VkCommandBufferAllocateInfo allocInfo = {};
     allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
@@ -440,9 +443,9 @@ void RendererBase::createCommandBuffers() {
         VkRenderPassBeginInfo renderPassInfo = {};
         renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
         renderPassInfo.renderPass = renderPass;
-        renderPassInfo.framebuffer = swapChainFramebuffers[i];
+        renderPassInfo.framebuffer = swapchain.framebuffers[i];
         renderPassInfo.renderArea.offset = { 0, 0 };
-        renderPassInfo.renderArea.extent = swapChainExtent;
+        renderPassInfo.renderArea.extent = swapchain.extent;
 
         VkClearValue clearColor = { 0.0f, 0.0f, 0.0f, 1.0f };
         renderPassInfo.clearValueCount = 1;
@@ -470,7 +473,7 @@ void RendererBase::createSyncObjects() {
     imageAvailableSemaphores.resize(_CONFIG::maxFramesInFlight);
     renderFinishedSemaphores.resize(_CONFIG::maxFramesInFlight);
     inFlightFences.resize(_CONFIG::maxFramesInFlight);
-    imagesInFlight.resize(swapChainImages.size(), VK_NULL_HANDLE);
+    imagesInFlight.resize(swapchain.numImages, VK_NULL_HANDLE);
 
     VkSemaphoreCreateInfo semaphoreInfo = {};
     semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
@@ -490,11 +493,11 @@ void RendererBase::createSyncObjects() {
 
 // MAIN LOOP
 
-void RendererBase::DrawFrame(bool framebufferResized) {
+void RendererBase::drawFrameBase(bool framebufferResized) {
     vkWaitForFences(device, 1, &inFlightFences[currentFrame], VK_TRUE, DEFAULT_FENCE_TIMEOUT);
 
     uint32_t imageIndex;
-    VkResult result = vkAcquireNextImageKHR(device, swapChain, UINT64_MAX, imageAvailableSemaphores[currentFrame], VK_NULL_HANDLE, &imageIndex);
+    VkResult result = vkAcquireNextImageKHR(device, swapchain.swapchain, UINT64_MAX, imageAvailableSemaphores[currentFrame], VK_NULL_HANDLE, &imageIndex);
 
     if (result == VK_ERROR_OUT_OF_DATE_KHR) {
         recreateSwapChain();
@@ -516,33 +519,28 @@ void RendererBase::DrawFrame(bool framebufferResized) {
     submitInfo.waitSemaphoreCount = 1;
     submitInfo.pWaitSemaphores = waitSemaphores;
     submitInfo.pWaitDstStageMask = waitStages;
-
     submitInfo.commandBufferCount = 1;
     submitInfo.pCommandBuffers = &commandBuffers[imageIndex];
-
     VkSemaphore signalSemaphores[] = { renderFinishedSemaphores[currentFrame] };
     submitInfo.signalSemaphoreCount = 1;
     submitInfo.pSignalSemaphores = signalSemaphores;
 
     vkResetFences(device, 1, &inFlightFences[currentFrame]);
 
-    if (vkQueueSubmit(graphicsQueue, 1, &submitInfo, inFlightFences[currentFrame]) != VK_SUCCESS) {
+    if (vkQueueSubmit(queues.graphics, 1, &submitInfo, inFlightFences[currentFrame]) != VK_SUCCESS) {
         AID_ERROR("failed to submit draw command buffer!");
     }
 
     VkPresentInfoKHR presentInfo = {};
     presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
-
     presentInfo.waitSemaphoreCount = 1;
     presentInfo.pWaitSemaphores = signalSemaphores;
-
-    VkSwapchainKHR swapChains[] = { swapChain };
+    VkSwapchainKHR swapChains[] = { swapchain.swapchain };
     presentInfo.swapchainCount = 1;
     presentInfo.pSwapchains = swapChains;
-
     presentInfo.pImageIndices = &imageIndex;
 
-    result = vkQueuePresentKHR(presentQueue, &presentInfo);
+    result = vkQueuePresentKHR(queues.present, &presentInfo);
 
     if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR || framebufferResized) {
         recreateSwapChain();
@@ -550,7 +548,7 @@ void RendererBase::DrawFrame(bool framebufferResized) {
         AID_ERROR("failed to present swap chain image!");
     }
 
-    currentFrame = (currentFrame + 1) % _CONFIG::maxFramesInFlight;
+    currentFrame = (currentFrame + 1) % AIDANIC_CONFIG::maxFramesInFlight;
 }
 
 void RendererBase::recreateSwapChain() {
@@ -582,8 +580,8 @@ VKAPI_ATTR VkBool32 VKAPI_CALL RendererBase::debugCallback(VkDebugUtilsMessageSe
 
 // CLEANING UP
 
-void RendererBase::CleanUp() {
-    if (!initialized) {
+void RendererBase::cleanUpBase() {
+    if (!_initialized) {
         AID_WARN("Renderer not initialized, skipping renderer clean-up");
         return;
     }
@@ -592,13 +590,13 @@ void RendererBase::CleanUp() {
     vkDeviceWaitIdle(device);
     cleanupSwapChain();
 
-    vkDestroyBuffer(device, indexBuffer, VK_ALLOCATOR);
-    vkFreeMemory(device, indexBufferMemory, VK_ALLOCATOR);
+    vkDestroyBuffer(device, indexBuffer.buffer, VK_ALLOCATOR);
+    vkFreeMemory(device, indexBuffer.memory, VK_ALLOCATOR);
 
-    vkDestroyBuffer(device, vertexBuffer, VK_ALLOCATOR);
-    vkFreeMemory(device, vertexBufferMemory, VK_ALLOCATOR);
+    vkDestroyBuffer(device, vertexBuffer.buffer, VK_ALLOCATOR);
+    vkFreeMemory(device, vertexBuffer.memory, VK_ALLOCATOR);
 
-    for (size_t i = 0; i < _CONFIG::maxFramesInFlight; i++) {
+    for (size_t i = 0; i < AIDANIC_CONFIG::maxFramesInFlight; i++) {
         vkDestroySemaphore(device, renderFinishedSemaphores[i], VK_ALLOCATOR);
         vkDestroySemaphore(device, imageAvailableSemaphores[i], VK_ALLOCATOR);
         vkDestroyFence(device, inFlightFences[i], VK_ALLOCATOR);
@@ -617,7 +615,7 @@ void RendererBase::CleanUp() {
 }
 
 void RendererBase::cleanupSwapChain() {
-    for (auto framebuffer : swapChainFramebuffers) vkDestroyFramebuffer(device, framebuffer, VK_ALLOCATOR);
+    for (auto framebuffer : swapchain.framebuffers) vkDestroyFramebuffer(device, framebuffer, VK_ALLOCATOR);
 
     vkFreeCommandBuffers(device, commandPool, static_cast<uint32_t>(commandBuffers.size()), commandBuffers.data());
 
@@ -625,9 +623,9 @@ void RendererBase::cleanupSwapChain() {
     vkDestroyPipelineLayout(device, pipelineLayout, VK_ALLOCATOR);
     vkDestroyRenderPass(device, renderPass, VK_ALLOCATOR);
 
-    for (auto imageView : swapChainImageViews) vkDestroyImageView(device, imageView, VK_ALLOCATOR);
+    for (auto imageView : swapchain.imageViews) vkDestroyImageView(device, imageView, VK_ALLOCATOR);
 
-    vkDestroySwapchainKHR(device, swapChain, VK_ALLOCATOR);
+    vkDestroySwapchainKHR(device, swapchain.swapchain, VK_ALLOCATOR);
 }
 
 // HELPER FUNCTIONS
@@ -823,7 +821,7 @@ VkExtent2D RendererBase::chooseSwapExtent(const VkSurfaceCapabilitiesKHR& capabi
     }
 }
 
-std::vector<char> RendererBase::readFile(const std::string& filename) {
+std::vector<char> RendererBase::readFile(const std::string filename) {
     std::ifstream file(filename, std::ios::ate | std::ios::binary);
 
     if (!file.is_open()) {
@@ -865,45 +863,6 @@ VkPipelineShaderStageCreateInfo RendererBase::loadShader(const std::string filen
     shaderStageInfo.module = shaderModule;
     shaderStageInfo.pName = "main";
     return shaderStageInfo;
-}
-
-void RendererBase::createBuffer(VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkBuffer& buffer, VkDeviceMemory& bufferMemory, VkDeviceSize size, void* dataSrc = nullptr) {
-    VkBufferCreateInfo bufferInfo = {};
-    bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-    bufferInfo.size = size;
-    bufferInfo.usage = dataSrc == nullptr ? usage : usage | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
-    bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-
-    VK_CHECK_RESULT(vkCreateBuffer(device, &bufferInfo, nullptr, &buffer), "failed to create buffer!");
-
-    VkMemoryRequirements memRequirements;
-    vkGetBufferMemoryRequirements(device, buffer, &memRequirements);
-
-    VkMemoryAllocateInfo allocInfo = {};
-    allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-    allocInfo.allocationSize = memRequirements.size;
-    allocInfo.memoryTypeIndex = findMemoryType(memRequirements.memoryTypeBits, properties);
-
-    VK_CHECK_RESULT(vkAllocateMemory(device, &allocInfo, nullptr, &bufferMemory), "failed to allocate buffer memory!");
-
-    vkBindBufferMemory(device, buffer, bufferMemory, 0);
-
-    // copy data using staging buffer
-    if (dataSrc != nullptr) {
-        VkBuffer stagingBuffer;
-        VkDeviceMemory stagingBufferMemory;
-        createBuffer(VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, stagingBuffer, stagingBufferMemory, size);
-
-        void* dataDst;
-        vkMapMemory(device, stagingBufferMemory, 0, size, 0, &dataDst);
-        memcpy(dataDst, dataSrc, (size_t)size);
-        vkUnmapMemory(device, stagingBufferMemory);
-
-        copyBuffer(stagingBuffer, buffer, size);
-
-        vkDestroyBuffer(device, stagingBuffer, nullptr);
-        vkFreeMemory(device, stagingBufferMemory, nullptr);
-    }
 }
 
 void RendererBase::copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size) {
@@ -961,9 +920,167 @@ void RendererBase::endSingleTimeCommands(VkCommandBuffer commandBuffer) {
     VkFence fence;
     VK_CHECK_RESULT(vkCreateFence(device, &fenceInfo, nullptr, &fence), "failed to create endSingleTimeCommands() fence");
 
-    VK_CHECK_RESULT(vkQueueSubmit(graphicsQueue, 1, &submitInfo, fence), "failed to submit single time command buffer");
+    VK_CHECK_RESULT(vkQueueSubmit(queues.graphics, 1, &submitInfo, fence), "failed to submit single time command buffer");
     VK_CHECK_RESULT(vkWaitForFences(device, 1, &fence, VK_TRUE, DEFAULT_FENCE_TIMEOUT), "single time command buffer submit fence wait failed");
 
     vkDestroyFence(device, fence, nullptr);
     vkFreeCommandBuffers(device, commandPool, 1, &commandBuffer);
+}
+
+void RendererBase::recordImageLayoutTransition(VkCommandBuffer& commandBuffer, VkImage image, VkImageLayout oldImageLayout, VkImageLayout newImageLayout,
+    VkImageSubresourceRange subresourceRange, VkPipelineStageFlags srcStageMask = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VkPipelineStageFlags dstStageMask = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT) {
+    // Create an image barrier object
+    VkImageMemoryBarrier imageMemoryBarrier{};
+    imageMemoryBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    imageMemoryBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    imageMemoryBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    imageMemoryBarrier.oldLayout = oldImageLayout;
+    imageMemoryBarrier.newLayout = newImageLayout;
+    imageMemoryBarrier.image = image;
+    imageMemoryBarrier.subresourceRange = subresourceRange;
+
+    // Source layouts (old)
+    // Source access mask controls actions that have to be finished on the old layout
+    // before it will be transitioned to the new layout
+    switch (oldImageLayout)
+    {
+    case VK_IMAGE_LAYOUT_UNDEFINED:
+        // Image layout is undefined (or does not matter)
+        // Only valid as initial layout
+        // No flags required, listed only for completeness
+        imageMemoryBarrier.srcAccessMask = 0;
+        break;
+
+    case VK_IMAGE_LAYOUT_PREINITIALIZED:
+        // Image is preinitialized
+        // Only valid as initial layout for linear images, preserves memory contents
+        // Make sure host writes have been finished
+        imageMemoryBarrier.srcAccessMask = VK_ACCESS_HOST_WRITE_BIT;
+        break;
+
+    case VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL:
+        // Image is a color attachment
+        // Make sure any writes to the color buffer have been finished
+        imageMemoryBarrier.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+        break;
+
+    case VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL:
+        // Image is a depth/stencil attachment
+        // Make sure any writes to the depth/stencil buffer have been finished
+        imageMemoryBarrier.srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+        break;
+
+    case VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL:
+        // Image is a transfer source 
+        // Make sure any reads from the image have been finished
+        imageMemoryBarrier.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+        break;
+
+    case VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL:
+        // Image is a transfer destination
+        // Make sure any writes to the image have been finished
+        imageMemoryBarrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        break;
+
+    case VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL:
+        // Image is read by a shader
+        // Make sure any shader reads from the image have been finished
+        imageMemoryBarrier.srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
+        break;
+    default:
+        // Other source layouts aren't handled (yet)
+        AID_WARN("RendererBase::recordSetImageLayout oldImageLayout not supported!");
+        break;
+    }
+
+    // Target layouts (new)
+    // Destination access mask controls the dependency for the new image layout
+    switch (newImageLayout)
+    {
+    case VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL:
+        // Image will be used as a transfer destination
+        // Make sure any writes to the image have been finished
+        imageMemoryBarrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        break;
+
+    case VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL:
+        // Image will be used as a transfer source
+        // Make sure any reads from the image have been finished
+        imageMemoryBarrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+        break;
+
+    case VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL:
+        // Image will be used as a color attachment
+        // Make sure any writes to the color buffer have been finished
+        imageMemoryBarrier.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+        break;
+
+    case VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL:
+        // Image layout will be used as a depth/stencil attachment
+        // Make sure any writes to depth/stencil buffer have been finished
+        imageMemoryBarrier.dstAccessMask = imageMemoryBarrier.dstAccessMask | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+        break;
+
+    case VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL:
+        // Image will be read in a shader (sampler, input attachment)
+        // Make sure any writes to the image have been finished
+        if (imageMemoryBarrier.srcAccessMask == 0)
+            imageMemoryBarrier.srcAccessMask = VK_ACCESS_HOST_WRITE_BIT | VK_ACCESS_TRANSFER_WRITE_BIT;
+        imageMemoryBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+        break;
+    default:
+        // Other source layouts aren't handled (yet)
+        AID_WARN("RendererBase::recordSetImageLayout newImageLayout not supported!");
+        break;
+    }
+
+    // Put barrier inside setup command buffer
+    vkCmdPipelineBarrier(
+        commandBuffer,
+        srcStageMask,
+        dstStageMask,
+        0,
+        0, nullptr,
+        0, nullptr,
+        1, &imageMemoryBarrier);
+}
+
+// BUFFER CLASS
+
+void RendererBase::createBuffer(Buffer buffer, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkDeviceSize size) {
+    VkBufferCreateInfo bufferInfo = {};
+    bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+    bufferInfo.size = size;
+    bufferInfo.usage = usage;
+    bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+    VK_CHECK_RESULT(vkCreateBuffer(device, &bufferInfo, nullptr, &buffer.buffer), "failed to create buffer!");
+
+    VkMemoryRequirements memRequirements;
+    vkGetBufferMemoryRequirements(device, buffer.buffer, &memRequirements);
+
+    VkMemoryAllocateInfo allocInfo = {};
+    allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+    allocInfo.allocationSize = memRequirements.size;
+    allocInfo.memoryTypeIndex = findMemoryType(memRequirements.memoryTypeBits, properties);
+
+    VK_CHECK_RESULT(vkAllocateMemory(device, &allocInfo, nullptr, &buffer.memory), "failed to allocate buffer memory!");
+
+    vkBindBufferMemory(device, buffer.buffer, buffer.memory, 0);
+    buffer.size = size;
+}
+
+void RendererBase::uploadBuffer(Buffer buffer, VkDeviceSize size, void* dataSrc = nullptr) {
+    Buffer stagingBuffer;
+    createBuffer(buffer, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, size);
+
+    void* dataDst;
+    vkMapMemory(device, stagingBuffer.memory, 0, size, 0, &dataDst);
+    memcpy(dataDst, dataSrc, (size_t)size);
+    vkUnmapMemory(device, stagingBuffer.memory);
+
+    copyBuffer(stagingBuffer.buffer, buffer.buffer, size);
+
+    vkDestroyBuffer(device, stagingBuffer.buffer, nullptr);
+    vkFreeMemory(device, stagingBuffer.memory, nullptr);
 }
