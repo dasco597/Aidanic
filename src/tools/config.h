@@ -3,29 +3,26 @@
 
 #ifdef _DEBUG
 
-    // allows printing of LOG_TRACE and AID_INFO
-    #define _VERBOSE_OUTPUT
+// allows printing of LOG_TRACE and AID_INFO
+#define _VERBOSE_OUTPUT
 
-    // allows debug breaks
-    #ifdef WIN32
-    #define _DEBUG_BREAK __debugbreak()
-    #endif
-    #ifdef LINUX
-    #define _DEBUG_BREAK __builtin_trap()
-    #endif
+// allows debug breaks
+#ifdef WIN32
+#define _DEBUG_BREAK __debugbreak()
+#endif // WIN32
+#ifdef LINUX
+#define _DEBUG_BREAK __builtin_trap()
+#endif // LINUX
 
 #endif // _DEBUG
 
-namespace AIDANIC_CONFIG {
-    // general
+#define _WINDOW_SIZE_X 1200
+#define _WINDOW_SIZE_Y 800
 
-    const uint32_t initialWindowSize[2] = { 800, 600 };
+#define _MAX_FRAMES_IN_FLIGHT 2
 
-    // renderer
-
-    const int maxFramesInFlight = 2;
-
-    char* getAssetPath() {
+namespace _CONFIG {
+    static char* getAssetPath() {
         return "assets/";
     }
 }

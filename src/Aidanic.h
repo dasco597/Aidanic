@@ -1,30 +1,38 @@
 #pragma once
-#include "IOInterface.h"
-#include "RendererRTX.h"
 
-#include <GLFW/glfw3.h>
+#include "IOInterface.h"
+#include "Renderer.h"
+#include "tools/config.h"
+
 #include <glm.hpp>
 
 class Aidanic {
 public:
-    ~Aidanic();
     void Run();
 
-    static void WindowResizeCallback(GLFWwindow* window, int width, int height);
+    VkResult createVkSurface(VkInstance& instance, const VkAllocationCallbacks* allocator, VkSurfaceKHR* surface);
+    static void windowResizeCallback(GLFWwindow* window, int width, int height);
+
+    std::array<int, 2> getWindowSize();
 
 private:
-    void Init();
-    void Loop();
-    void CleanUp();
+    void init();
+
+    void loop();
+    void processInputs();
+
+    void cleanUp();
 
     IOInterface ioInterface;
-    RendererRTX rendererRTX;
+    Renderer renderer;
 
     // variables
-    bool quit = false, windowResized = false, cleanedUp = false;
-    uint32_t windowSize[2] = { 0, 0 };
-    uint32_t inputs = 0;
-    glm::mat4x4 viewMatrix = glm::mat4x4(0.0);
 
-    void ProcessInputs();
+    bool quit = false;
+    bool windowResized = false;
+    bool cleanedUp = false;
+
+    std::array<int, 2> windowSize = { _WINDOW_SIZE_X, _WINDOW_SIZE_Y };
+    IOInterface::Inputs inputs = { IOInterface::INPUTS::NONE };
+    glm::mat4x4 viewMatrix = glm::mat4x4(0.0);
 };

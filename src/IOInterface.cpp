@@ -2,11 +2,11 @@
 #include "Aidanic.h"
 #include "tools/Log.h"
 
-void IOInterface::Init(Aidanic* application, uint32_t width, uint32_t height) {
+void IOInterface::init(Aidanic* application, uint32_t width, uint32_t height) {
     AID_INFO("Initializing interface...");
     windowSize[0] = width;
     windowSize[1] = height;
-    if (window) CleanUp();
+    if (window) cleanUp();
 
     // glfw is the window/input manager we'll be using
     glfwInit();
@@ -16,15 +16,19 @@ void IOInterface::Init(Aidanic* application, uint32_t width, uint32_t height) {
     // create glfw window
     window = glfwCreateWindow(width, height, "Aidanic", nullptr, nullptr);
     glfwSetWindowUserPointer(window, application);
-    glfwSetFramebufferSizeCallback(window, application->WindowResizeCallback);
+    glfwSetFramebufferSizeCallback(window, application->windowResizeCallback);
 
     glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
     glfwGetCursorPos(window, &mousePosPrev[0], &mousePosPrev[1]);
 
-    SetKeyBindings();
+    setKeyBindings();
 }
 
-void IOInterface::MinimizeSuspend() {
+VkResult IOInterface::createVkSurface(VkInstance& instance, const VkAllocationCallbacks* allocator, VkSurfaceKHR* surface) {
+    return glfwCreateWindowSurface(instance, getWindow(), allocator, surface);
+}
+
+void IOInterface::minimizeSuspend() {
     int width = 0, height = 0;
     while (width == 0 || height == 0) {
         glfwGetFramebufferSize(window, &width, &height);
@@ -32,42 +36,42 @@ void IOInterface::MinimizeSuspend() {
     }
 }
 
-uint32_t IOInterface::GetInputs() {
-    uint32_t inputs = 0;
+IOInterface::Inputs IOInterface::getInputs() {
+    Inputs inputs = { INPUTS::NONE };
     for (auto& [key, input] : keyBindings) {
         int state = glfwGetKey(window, key);
-        if (state == GLFW_PRESS) inputs |= static_cast<uint32_t>(input);
+        if (state == GLFW_PRESS) inputs.uint |= input.uint;
     }
     return inputs;
 }
 
-void IOInterface::CleanUp() {
+void IOInterface::cleanUp() {
     AID_INFO("Cleaning up ioInterface/GLFW...");
     glfwDestroyWindow(window);
     glfwTerminate();
     window = nullptr;
 }
 
-void IOInterface::SetKeyBindings() {
-    keyBindings[GLFW_KEY_ESCAPE]        = INPUTS::ESC;
+void IOInterface::setKeyBindings() {
+    keyBindings[GLFW_KEY_ESCAPE].i      = INPUTS::ESC;
 
-    keyBindings[GLFW_KEY_W]             = INPUTS::UP;
-    keyBindings[GLFW_KEY_A]             = INPUTS::LEFT;
-    keyBindings[GLFW_KEY_S]             = INPUTS::DOWN;
-    keyBindings[GLFW_KEY_D]             = INPUTS::RIGHT;
-    keyBindings[GLFW_KEY_Q]             = INPUTS::ROTATEL;
-    keyBindings[GLFW_KEY_E]             = INPUTS::ROTATER;
+    keyBindings[GLFW_KEY_W].i           = INPUTS::UP;
+    keyBindings[GLFW_KEY_A].i           = INPUTS::LEFT;
+    keyBindings[GLFW_KEY_S].i           = INPUTS::DOWN;
+    keyBindings[GLFW_KEY_D].i           = INPUTS::RIGHT;
+    keyBindings[GLFW_KEY_Q].i           = INPUTS::ROTATEL;
+    keyBindings[GLFW_KEY_E].i           = INPUTS::ROTATER;
 
-    keyBindings[GLFW_KEY_UP]            = INPUTS::UP;
-    keyBindings[GLFW_KEY_DOWN]          = INPUTS::DOWN;
-    keyBindings[GLFW_KEY_LEFT]          = INPUTS::LEFT;
-    keyBindings[GLFW_KEY_RIGHT]         = INPUTS::RIGHT;
-    keyBindings[GLFW_KEY_PAGE_UP]       = INPUTS::ROTATEL;
-    keyBindings[GLFW_KEY_PAGE_DOWN]     = INPUTS::ROTATER;
+    keyBindings[GLFW_KEY_UP].i          = INPUTS::UP;
+    keyBindings[GLFW_KEY_DOWN].i        = INPUTS::DOWN;
+    keyBindings[GLFW_KEY_LEFT].i        = INPUTS::LEFT;
+    keyBindings[GLFW_KEY_RIGHT].i       = INPUTS::RIGHT;
+    keyBindings[GLFW_KEY_PAGE_UP].i     = INPUTS::ROTATEL;
+    keyBindings[GLFW_KEY_PAGE_DOWN].i   = INPUTS::ROTATER;
 
-    keyBindings[GLFW_KEY_SPACE]         = INPUTS::FORWARD;
-    keyBindings[GLFW_KEY_LEFT_SHIFT]    = INPUTS::BACKWARD;
+    keyBindings[GLFW_KEY_SPACE].i       = INPUTS::FORWARD;
+    keyBindings[GLFW_KEY_LEFT_SHIFT].i  = INPUTS::BACKWARD;
 
-    keyBindings[GLFW_KEY_Z]             = INPUTS::INTERACTL;
-    keyBindings[GLFW_KEY_X]             = INPUTS::INTERACTR;
+    keyBindings[GLFW_KEY_Z].i           = INPUTS::INTERACTL;
+    keyBindings[GLFW_KEY_X].i           = INPUTS::INTERACTR;
 }
