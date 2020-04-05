@@ -2,25 +2,27 @@
 
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
+#include <imgui.h>
 #include <map>
+#include <vector>
 
 class Aidanic;
 
 enum struct INPUTS {
-	NONE = 0,
-	ESC = (1 << 0),
-	FORWARD = (1 << 1),
-	BACKWARD = (1 << 2),
-	LEFT = (1 << 3),
-	RIGHT = (1 << 4),
-	UP = (1 << 5),
-	DOWN = (1 << 6),
-	ROTATEL = (1 << 7),
-	ROTATER = (1 << 8),
-	MOUSEL = (1 << 9),
-	MOUSER = (1 << 10),
-	INTERACTL = (1 << 11),
-	INTERACTR = (1 << 12)
+	NONE		= 0,
+	ESC			= (1 << 0),
+	FORWARD		= (1 << 1),
+	BACKWARD	= (1 << 2),
+	LEFT		= (1 << 3),
+	RIGHT		= (1 << 4),
+	UP			= (1 << 5),
+	DOWN		= (1 << 6),
+	ROTATEL		= (1 << 7),
+	ROTATER		= (1 << 8),
+	MOUSEL		= (1 << 9),
+	MOUSER		= (1 << 10),
+	INTERACTL	= (1 << 11),
+	INTERACTR	= (1 << 12)
 }; // do not excede 32 values!
 
 union Inputs {
@@ -32,24 +34,29 @@ union Inputs {
 class IOInterface {
 public:
 
-    void init(Aidanic* application, uint32_t width, uint32_t height);
+    void init(Aidanic* application, std::vector<const char*>& requiredExtensions, uint32_t width, uint32_t height);
+	static void glfwErrorCallback(int error, const char* errorMessage);
 	VkResult createVkSurface(VkInstance& instance, const VkAllocationCallbacks* allocator, VkSurfaceKHR* surface);
-	
+
+	static void windowResizeCallback(GLFWwindow* window, int width, int height);
+	std::array<int, 2> IOInterface::getWindowSize();
+
 	int windowCloseCheck() { return glfwWindowShouldClose(window); };
 	void minimizeSuspend(); // doesn't return unless window isn't minimized
 	void pollEvents() { glfwPollEvents(); }; // updates glfw state (key presses etc)
 
-	Inputs getInputs(); // returns bits corresponding to INPUTS for the different input signals
+	Inputs getInputs();
 	void getMouseChange(double& mouseX, double& mouseY);
-	GLFWwindow* getWindow() { return window; }
 
 	void cleanUp();
 
 private:
 
+	Aidanic* aidanicApp;
     GLFWwindow* window = nullptr;
-    uint32_t windowSize[2] = { 0, 0 };
+	ImGuiIO& imGuiIO;
 
+    uint32_t windowSize[2] = { 0, 0 };
     std::map<uint32_t, Inputs> keyBindings; // <GLFW_KEY, INPUTS>
 	double mousePosPrev[2] = { 0.0, 0.0 };
 

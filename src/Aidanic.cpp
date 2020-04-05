@@ -8,9 +8,9 @@
 using namespace std::chrono;
 
 std::vector<Vertex> vertices = {
-    { {  1.0f,  1.0f, 0.0f } },
-    { { -1.0f,  1.0f, 0.0f } },
-    { {  0.0f, -1.0f, 0.0f } }
+    { { 5.0f,  0.0f,  0.577f } },
+    { { 5.0f, -0.5f, -0.289f } },
+    { { 5.0f,  0.5f, -0.289f } }
 };
 std::vector<uint32_t> indices = { 0, 1, 2 };
 
@@ -41,7 +41,8 @@ void Aidanic::init() {
     AID_INFO("Logger initialized");
     AID_INFO("~ Initializing Aidanic...");
 
-    ioInterface.init(this, windowSize[0], windowSize[1]);
+    std::vector<const char*> requiredExtensions;
+    ioInterface.init(this, requiredExtensions, windowSize[0], windowSize[1]);
     AID_INFO("IO interface initialized");
 
     Model model{ 
@@ -51,7 +52,7 @@ void Aidanic::init() {
 
     updateMatrices();
 
-    renderer.init(this, model, viewInverse, projInverse, viewerPosition);
+    renderer.init(this, requiredExtensions, model, viewInverse, projInverse, viewerPosition);
     AID_INFO("Vulkan renderer RTX initialized");
 }
 
@@ -135,12 +136,7 @@ void Aidanic::cleanUp() {
     cleanedUp = true;
 }
 
-void Aidanic::windowResizeCallback(GLFWwindow* window, int width, int height) {
-    Aidanic* application = reinterpret_cast<Aidanic*>(glfwGetWindowUserPointer(window));
-    application->windowResized = true;
-}
-
 std::array<int, 2> Aidanic::getWindowSize() {
-    glfwGetFramebufferSize(ioInterface.getWindow(), &windowSize[0], &windowSize[1]);
+    windowSize = ioInterface.getWindowSize();
     return windowSize;
 }

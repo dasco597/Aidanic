@@ -1,5 +1,4 @@
 todo:
 
-mouse camera control
 imgui (better version) fov control
 sdf with intersection shader or some shit

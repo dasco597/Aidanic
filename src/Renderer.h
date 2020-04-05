@@ -33,7 +33,7 @@ class Aidanic;
 
 class Renderer {
 public:
-    void init(Aidanic* app, Model model, glm::mat4 viewInverse, glm::mat4 projInverse, glm::vec3 cameraPos);
+    void init(Aidanic* app, std::vector<const char*>& requiredExtensions, Model model, glm::mat4 viewInverse, glm::mat4 projInverse, glm::vec3 cameraPos);
     void drawFrame(bool framebufferResized, glm::mat4 viewInverse, glm::mat4 projInverse, glm::vec3 cameraPos);
     void cleanUp();
 
@@ -158,7 +158,7 @@ private:
 
     // initialization
 
-    void createInstance();
+    void createInstance(std::vector<const char*>& requiredExtensions);
     void setupDebugMessenger();
     void createSurface();
     void pickPhysicalDevice();

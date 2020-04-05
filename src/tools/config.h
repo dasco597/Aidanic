@@ -14,6 +14,8 @@
 #define _DEBUG_BREAK __builtin_trap()
 #endif // LINUX
 
+#else // _DEBUG
+#define _DEBUG_BREAK
 #endif // _DEBUG
 
 #define _WINDOW_SIZE_X 1200

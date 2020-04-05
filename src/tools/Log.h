@@ -38,6 +38,7 @@ private:
 #define AID_INFO(...)
 #endif // _VERBOSE_OUTPUT
 #define AID_WARN(...)   Log::getLogger()->warn(__VA_ARGS__)
+// always put AID_ERROR on a new line!
 #define AID_ERROR(...)  Log::getLogger()->error("ERROR - " + std::string(__FILE__) + \
     " [line: " + std::to_string(__LINE__) + "]\n" + __VA_ARGS__); _DEBUG_BREAK;      \
     throw std::runtime_error("Aidanic crashed! See above error message")

@@ -2,30 +2,70 @@
 #include "Aidanic.h"
 #include "tools/Log.h"
 
-void IOInterface::init(Aidanic* application, uint32_t width, uint32_t height) {
+void IOInterface::init(Aidanic* application, std::vector<const char*>& requiredExtensions, uint32_t width, uint32_t height) {
     AID_INFO("Initializing interface...");
     windowSize[0] = width;
     windowSize[1] = height;
+    aidanicApp = application;
     if (window) cleanUp();
 
-    // glfw is the window/input manager we'll be using
-    glfwInit();
-    glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API); // tells GLFW not to make an OpenGL context
-    glfwWindowHint(GLFW_RESIZABLE, GL_TRUE);
+    // GLFW
+
+    glfwSetErrorCallback(glfwErrorCallback);
+    if (!glfwInit()) {
+        AID_ERROR("GLFW init failed");
+    }
 
     // create glfw window
+    glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API); // tells GLFW not to make an OpenGL context
+    glfwWindowHint(GLFW_RESIZABLE, GL_TRUE);
     window = glfwCreateWindow(width, height, "Aidanic", nullptr, nullptr);
-    glfwSetWindowUserPointer(window, application);
-    glfwSetFramebufferSizeCallback(window, application->windowResizeCallback);
+
+    if (!glfwVulkanSupported()) {
+        AID_ERROR("Vulkan not supported (GLFW check)");
+    }
+
+    glfwSetWindowUserPointer(window, this);
+    glfwSetFramebufferSizeCallback(window, this->windowResizeCallback);
 
     glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
     glfwGetCursorPos(window, &mousePosPrev[0], &mousePosPrev[1]);
 
+    uint32_t glfwExtensionCount = 0;
+    const char** glfwExtensions;
+    glfwExtensions = glfwGetRequiredInstanceExtensions(&glfwExtensionCount);
+    for (int e = 0; e < glfwExtensionCount; e++) {
+        requiredExtensions.push_back(glfwExtensions[e]);
+    }
+
+    // DEAR IMGUI
+
+    IMGUI_CHECKVERSION();
+    ImGui::CreateContext();
+    imGuiIO = ImGui::GetIO();
+
+    ImGui::StyleColorsDark();
+
     setKeyBindings();
 }
 
+void IOInterface::glfwErrorCallback(int error, const char* errorMessage) {
+    AID_ERROR("GLFW Error {}: {}", error, errorMessage);
+}
+
 VkResult IOInterface::createVkSurface(VkInstance& instance, const VkAllocationCallbacks* allocator, VkSurfaceKHR* surface) {
-    return glfwCreateWindowSurface(instance, getWindow(), allocator, surface);
+    return glfwCreateWindowSurface(instance, window, allocator, surface);
+}
+
+void IOInterface::windowResizeCallback(GLFWwindow* window, int width, int height) {
+    IOInterface* application = reinterpret_cast<IOInterface*>(glfwGetWindowUserPointer(window));
+    application->aidanicApp->setWindowResizedFlag();
+}
+
+std::array<int, 2> IOInterface::getWindowSize() {
+    std::array<int, 2> windowSize;
+    glfwGetFramebufferSize(window, &windowSize[0], &windowSize[1]);
+    return windowSize;
 }
 
 void IOInterface::minimizeSuspend() {

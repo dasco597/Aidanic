@@ -2,8 +2,6 @@
 #include "Aidanic.h"
 #include "tools/config.h"
 
-#define GLFW_INCLUDE_VULKAN
-#include <GLFW/glfw3.h>
 #include <array>
 #include <iostream>
 #include <stdexcept>
@@ -34,11 +32,11 @@ enum {
 
 // INITIALIZATION
 
-void Renderer::init(Aidanic* app, Model model, glm::mat4 viewInverse, glm::mat4 projInverse, glm::vec3 cameraPos) {
+void Renderer::init(Aidanic* app, std::vector<const char*>& requiredExtensions, Model model, glm::mat4 viewInverse, glm::mat4 projInverse, glm::vec3 cameraPos) {
     AID_INFO("Initializing vulkan renderer...");
     this->aidanicApp = app;
 
-    createInstance();
+    createInstance(requiredExtensions);
     setupDebugMessenger();
     createSurface();
     pickPhysicalDevice();
@@ -61,7 +59,7 @@ void Renderer::init(Aidanic* app, Model model, glm::mat4 viewInverse, glm::mat4 
     createCommandBuffers();
 }
 
-void Renderer::createInstance() {
+void Renderer::createInstance(std::vector<const char*>& requiredExtensions) {
     if (enableValidationLayers && !checkValidationLayerSupport()) {
         AID_ERROR("validation layers requested, but not available!");
     }
@@ -78,7 +76,8 @@ void Renderer::createInstance() {
     createInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
     createInfo.pApplicationInfo = &appInfo;
 
-    auto extensions = getRequiredExtensions();
+    std::vector<const char*> extensions = getRequiredExtensions();
+    extensions.insert(extensions.end(), requiredExtensions.begin(), requiredExtensions.end());
     createInfo.enabledExtensionCount = static_cast<uint32_t>(extensions.size());
     createInfo.ppEnabledExtensionNames = extensions.data();
 
@@ -1087,11 +1086,7 @@ Renderer::SwapChainSupportDetails Renderer::querySwapChainSupport(VkPhysicalDevi
 }
 
 std::vector<const char*> Renderer::getRequiredExtensions() {
-    uint32_t glfwExtensionCount = 0;
-    const char** glfwExtensions;
-    glfwExtensions = glfwGetRequiredInstanceExtensions(&glfwExtensionCount);
-
-    std::vector<const char*> extensions(glfwExtensions, glfwExtensions + glfwExtensionCount);
+    std::vector<const char*> extensions;
 
     if (enableValidationLayers)
         extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
