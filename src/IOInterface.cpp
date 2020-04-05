@@ -36,13 +36,21 @@ void IOInterface::minimizeSuspend() {
     }
 }
 
-IOInterface::Inputs IOInterface::getInputs() {
+Inputs IOInterface::getInputs() {
     Inputs inputs = { INPUTS::NONE };
     for (auto& [key, input] : keyBindings) {
         int state = glfwGetKey(window, key);
         if (state == GLFW_PRESS) inputs.uint |= input.uint;
     }
     return inputs;
+}
+
+void IOInterface::getMouseChange(double& mouseX, double& mouseY) {
+    double mousePosCurrent[2];
+    glfwGetCursorPos(window, &mousePosCurrent[0], &mousePosCurrent[1]); // get current mouse position
+    mouseX = mousePosCurrent[0] - mousePosPrev[0];
+    mouseY = mousePosCurrent[1] - mousePosPrev[1];
+    glfwGetCursorPos(window, &mousePosPrev[0], &mousePosPrev[1]); // set previous position
 }
 
 void IOInterface::cleanUp() {

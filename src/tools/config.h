@@ -21,6 +21,8 @@
 
 #define _MAX_FRAMES_IN_FLIGHT 2
 
+#define _AID_PI 3.14159f
+
 namespace _CONFIG {
     static char* getAssetPath() {
         return "assets/";

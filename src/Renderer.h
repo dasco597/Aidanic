@@ -8,11 +8,9 @@
 
 #include "tools/Log.h"
 
-#define GLM_FORCE_RADIANS
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
 //#define GLM_FORCE_DEFAULT_ALIGNED_GENTYPES
 #include <glm.hpp>
-#include <gtc/matrix_transform.hpp>
 #include <vulkan/vulkan.h>
 #include <vulkan/vulkan_core.h>
 
@@ -35,8 +33,8 @@ class Aidanic;
 
 class Renderer {
 public:
-    void init(Aidanic* app, Model model);
-    void drawFrame(bool framebufferResized);
+    void init(Aidanic* app, Model model, glm::mat4 viewInverse, glm::mat4 projInverse, glm::vec3 cameraPos);
+    void drawFrame(bool framebufferResized, glm::mat4 viewInverse, glm::mat4 projInverse, glm::vec3 cameraPos);
     void cleanUp();
 
 private:
@@ -61,6 +59,7 @@ private:
         VkBuffer buffer;
         VkDeviceMemory memory;
         VkDeviceSize size = static_cast<VkDeviceSize>(0);
+        VkDeviceSize dynamicStride = 0;
     };
 
     struct StorageImage {
@@ -96,6 +95,7 @@ private:
 
     VkDevice device;
     VkPhysicalDevice physicalDevice;
+    VkPhysicalDeviceProperties physicalDeviceProperties{};
 
     struct {
         VkQueue graphics;
@@ -129,15 +129,10 @@ private:
 
     Buffer vertexBuffer, indexBuffer, uboBuffer;
 
-    struct {
-        glm::mat4 viewInverse = glm::mat4(1.f, 0.f, 0.f, 0.f,
-                                          0.f, 1.f, 0.f, 0.f,
-                                          0.f, 0.f, 1.f, 0.f,
-                                          0.f, 0.f, 2.5f, 1.f);
-        glm::mat4 projInverse = glm::mat4(1.0264f, 0.f, 0.f, 0.f,
-                                          0.f, 0.5774f, 0.f, 0.f,
-                                          0.f, 0.f, 0.f, -9.9980f,
-                                          0.f, 0.f, -1.f, 10.f);
+    struct UniformData {
+        glm::mat4 viewInverse = glm::mat4(1.0f);
+        glm::mat4 projInverse = glm::mat4(1.0f);
+        glm::vec4 cameraPos = glm::vec4(0.0f);
     } uniformData;
 
     std::vector<VkSemaphore> imageAvailableSemaphores;
@@ -185,6 +180,7 @@ private:
 
     // main loop
 
+    void updateUniformBuffer(glm::mat4 viewInverse, glm::mat4 projInverse, glm::vec4 cameraPos, uint32_t swapchainIndex);
     void recreateSwapChain();
     static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity, VkDebugUtilsMessageTypeFlagsEXT messageType, const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData, void* pUserData);
 
@@ -220,10 +216,11 @@ private:
         VkImageSubresourceRange subresourceRange, VkPipelineStageFlags srcStageMask = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VkPipelineStageFlags dstStageMask = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT);
 
     void createBuffer(Buffer& buffer, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkDeviceSize size);
-    void uploadBufferDeviceLocal(Buffer& buffer, void* data, VkDeviceSize size);
-    void uploadBufferHostVisible(Buffer& buffer, void* data, VkDeviceSize size);
+    void uploadBufferDeviceLocal(Buffer& buffer, void* data, VkDeviceSize size, VkDeviceSize bufferOffset = 0);
+    void uploadBufferHostVisible(Buffer& buffer, void* data, VkDeviceSize size, VkDeviceSize bufferOffset = 0);
     void destroyBuffer(Buffer& buffer);
 
+    VkDeviceSize getUBOOffsetAligned(VkDeviceSize stride);
     uint32_t findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties);
 
     // vulkan pointers

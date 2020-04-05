@@ -34,11 +34,10 @@ enum {
 
 // INITIALIZATION
 
-void Renderer::init(Aidanic* app, Model model) {
+void Renderer::init(Aidanic* app, Model model, glm::mat4 viewInverse, glm::mat4 projInverse, glm::vec3 cameraPos) {
     AID_INFO("Initializing vulkan renderer...");
     this->aidanicApp = app;
 
-    // base initialization
     createInstance();
     setupDebugMessenger();
     createSurface();
@@ -49,9 +48,13 @@ void Renderer::init(Aidanic* app, Model model) {
     createCommandPool();
     createSyncObjects();
 
-    // ray-tracing initialization
+    uniformData.viewInverse = viewInverse;
+    uniformData.projInverse = projInverse;
+    uniformData.cameraPos = glm::vec4(cameraPos, 1.f);
+
     createScene(model);
     createRenderImage();
+
     createRayTracingPipeline();
     createShaderBindingTable();
     createDescriptorSets();
@@ -139,6 +142,9 @@ void Renderer::pickPhysicalDevice() {
         AID_WARN(extensionWarning);
         AID_ERROR("failed to find a suitable GPU!");
     }
+
+    // get physical device properties and limits
+    vkGetPhysicalDeviceProperties(physicalDevice, &physicalDeviceProperties);
 
     // Query the ray tracing properties of the current implementation
     rayTracingProperties.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PROPERTIES_NV;
@@ -315,8 +321,11 @@ void Renderer::createScene(Model model) {
     createBuffer(indexBuffer, VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, sizeof(uint32_t) * model.indices.size());
     uploadBufferDeviceLocal(indexBuffer, model.indices.data(), indexBuffer.size);
 
-    createBuffer(uboBuffer, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, sizeof(uniformData));
-    uploadBufferDeviceLocal(uboBuffer, &uniformData, uboBuffer.size);
+    uboBuffer.dynamicStride = getUBOOffsetAligned(sizeof(UniformData));
+    createBuffer(uboBuffer, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT, static_cast<VkDeviceSize>(swapchain.numImages) * uboBuffer.dynamicStride);
+    for (int i = 0; i < swapchain.numImages; i++) {
+        uploadBufferHostVisible(uboBuffer, &uniformData, sizeof(UniformData), static_cast<VkDeviceSize>(i) * uboBuffer.dynamicStride);
+    }
 
     // create a bottom-level acceleration structure containing the scene geometry
 
@@ -573,7 +582,7 @@ void Renderer::createRayTracingPipeline() {
 
     VkDescriptorSetLayoutBinding layoutBindingUniformBuffer{};
     layoutBindingUniformBuffer.binding = 2;
-    layoutBindingUniformBuffer.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    layoutBindingUniformBuffer.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
     layoutBindingUniformBuffer.descriptorCount = 1;
     layoutBindingUniformBuffer.stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_NV;
 
@@ -636,7 +645,7 @@ void Renderer::createDescriptorSets() {
     std::vector<VkDescriptorPoolSize> poolSizes = {
         { VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_NV, 1 },
         { VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1 },
-        { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1 }
+        { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, 1 }
     };
 
     VkDescriptorPoolCreateInfo descriptorPoolCI{};
@@ -688,13 +697,13 @@ void Renderer::createDescriptorSets() {
     VkDescriptorBufferInfo uboDescriptor{};
     uboDescriptor.buffer = uboBuffer.buffer;
     uboDescriptor.offset = 0;
-    uboDescriptor.range = uboBuffer.size;
+    uboDescriptor.range = uboBuffer.dynamicStride;
 
     VkWriteDescriptorSet uniformBufferWrite{};
     uniformBufferWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
     uniformBufferWrite.dstSet = descriptorSet;
     uniformBufferWrite.descriptorCount = 1;
-    uniformBufferWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    uniformBufferWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
     uniformBufferWrite.pBufferInfo = &uboDescriptor;
     uniformBufferWrite.dstBinding = 2;
 
@@ -732,8 +741,10 @@ void Renderer::createCommandBuffers() {
 
         // ray tracing dispath
 
+        uint32_t uboDynamicOffset = i * uboBuffer.dynamicStride;
+
         vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_RAY_TRACING_NV, pipeline);
-        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_RAY_TRACING_NV, pipelineLayout, 0, 1, &descriptorSet, 0, 0);
+        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_RAY_TRACING_NV, pipelineLayout, 0, 1, &descriptorSet, 1, &uboDynamicOffset);
 
         vkCmdTraceRaysNV(commandBuffer,
             shaderBindingTable.buffer, bindingOffsetRayGenShader,
@@ -786,7 +797,7 @@ void Renderer::createCommandBuffers() {
 
 // MAIN LOOP
 
-void Renderer::drawFrame(bool framebufferResized) {
+void Renderer::drawFrame(bool framebufferResized, glm::mat4 viewInverse, glm::mat4 projInverse, glm::vec3 cameraPos) {
     vkWaitForFences(device, 1, &inFlightFences[currentFrame], VK_TRUE, DEFAULT_FENCE_TIMEOUT);
 
     uint32_t imageIndex;
@@ -799,6 +810,8 @@ void Renderer::drawFrame(bool framebufferResized) {
     } else if (resultAcquire != VK_SUCCESS && resultAcquire != VK_SUBOPTIMAL_KHR) {
         AID_ERROR("failed to acquire swap chain image!");
     }
+
+    updateUniformBuffer(viewInverse, projInverse, glm::vec4(cameraPos, 1.f), imageIndex);
 
     if (imagesInFlight[imageIndex] != VK_NULL_HANDLE) {
         vkWaitForFences(device, 1, &imagesInFlight[imageIndex], VK_TRUE, DEFAULT_FENCE_TIMEOUT);
@@ -840,6 +853,14 @@ void Renderer::drawFrame(bool framebufferResized) {
     }
 
     currentFrame = (currentFrame + 1) % _MAX_FRAMES_IN_FLIGHT;
+}
+
+void Renderer::updateUniformBuffer(glm::mat4 viewInverse, glm::mat4 projInverse, glm::vec4 cameraPos, uint32_t swapchainIndex) {
+    uniformData.viewInverse = viewInverse;
+    uniformData.projInverse = projInverse;
+    uniformData.cameraPos = cameraPos;
+
+    uploadBufferHostVisible(uboBuffer, &uniformData, sizeof(UniformData), static_cast<VkDeviceSize>(swapchainIndex) * uboBuffer.dynamicStride);
 }
 
 void Renderer::recreateSwapChain() {
@@ -1358,13 +1379,16 @@ void Renderer::createBuffer(Buffer& buffer, VkBufferUsageFlags usage, VkMemoryPr
     buffer.size = size;
 }
 
-void Renderer::uploadBufferDeviceLocal(Buffer& buffer, void* data, VkDeviceSize size) {
+void Renderer::uploadBufferDeviceLocal(Buffer& buffer, void* data, VkDeviceSize size, VkDeviceSize bufferOffset) {
     Buffer stagingBuffer;
     createBuffer(stagingBuffer, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT, size);
-    uploadBufferHostVisible(stagingBuffer, data, size);
+    uploadBufferHostVisible(stagingBuffer, data, size, 0);
 
-    VkBufferCopy copyRegion = {};
+    VkBufferCopy copyRegion{};
     copyRegion.size = size;
+    copyRegion.srcOffset = 0;
+    copyRegion.dstOffset = bufferOffset;
+
     VkCommandBuffer commandBuffer = beginSingleTimeCommands();
     vkCmdCopyBuffer(commandBuffer, stagingBuffer.buffer, buffer.buffer, 1, &copyRegion);
     endSingleTimeCommands(commandBuffer);
@@ -1372,9 +1396,9 @@ void Renderer::uploadBufferDeviceLocal(Buffer& buffer, void* data, VkDeviceSize 
     destroyBuffer(stagingBuffer);
 }
 
-void Renderer::uploadBufferHostVisible(Buffer& buffer, void* data, VkDeviceSize size) {
+void Renderer::uploadBufferHostVisible(Buffer& buffer, void* data, VkDeviceSize size, VkDeviceSize bufferOffset) {
     void* dataDst;
-    VK_CHECK_RESULT(vkMapMemory(device, buffer.memory, 0, size, 0, &dataDst), "failed to map buffer memory");
+    VK_CHECK_RESULT(vkMapMemory(device, buffer.memory, bufferOffset, size, 0, &dataDst), "failed to map buffer memory");
     memcpy(dataDst, data, (size_t)size);
     vkUnmapMemory(device, buffer.memory);
 }
@@ -1395,4 +1419,9 @@ uint32_t Renderer::findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags pro
     }
 
     AID_ERROR("failed to find suitable memory type!");
+}
+
+VkDeviceSize Renderer::getUBOOffsetAligned(VkDeviceSize stride) {
+    VkDeviceSize minAlignment = physicalDeviceProperties.limits.minUniformBufferOffsetAlignment;
+    return minAlignment * static_cast<VkDeviceSize>((stride + minAlignment - 1) / minAlignment); // minAlignment * ceil(stride / minAlignment)
 }

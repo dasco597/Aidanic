@@ -1,7 +1,11 @@
 #include "Aidanic.h"
 #include "tools/Log.h"
 
+#include <gtx/rotate_vector.hpp>
 #include <iostream>
+#include <chrono>
+
+using namespace std::chrono;
 
 std::vector<Vertex> vertices = {
     { {  1.0f,  1.0f, 0.0f } },
@@ -40,12 +44,14 @@ void Aidanic::init() {
     ioInterface.init(this, windowSize[0], windowSize[1]);
     AID_INFO("IO interface initialized");
 
-    Model model{
+    Model model{ 
         std::vector<Vertex>(vertices),
         std::vector<uint32_t>(indices)
     };
 
-    renderer.init(this, model);
+    updateMatrices();
+
+    renderer.init(this, model, viewInverse, projInverse, viewerPosition);
     AID_INFO("Vulkan renderer RTX initialized");
 }
 
@@ -57,7 +63,7 @@ void Aidanic::loop() {
     AID_INFO("~ Entering main loop...");
     while (!quit && !ioInterface.windowCloseCheck()) {
         // submit draw commands for this frame
-        renderer.drawFrame(windowResized);
+        renderer.drawFrame(windowResized, viewInverse, projInverse, viewerPosition);
 
         // input handling
         ioInterface.pollEvents();
@@ -67,7 +73,54 @@ void Aidanic::loop() {
 }
 
 void Aidanic::processInputs() {
-    quit |= (bool)(inputs.uint & IO_INPUT_UINT(ESC));
+    quit |= inputs.conatinsInput(INPUTS::ESC);
+
+    // get time difference
+    static time_point<high_resolution_clock> timePrev = high_resolution_clock::now();
+    double timeDif = duration<double, seconds::period>(high_resolution_clock::now() - timePrev).count();
+    timePrev = high_resolution_clock::now();
+
+    // get mouse inputs from window interface
+    double mouseMovement[2];
+    ioInterface.getMouseChange(mouseMovement[0], mouseMovement[1]);
+
+    // LOOK
+
+    float viewAngleHoriz = (double)mouseMovement[0] * -radiansPerMousePosYaw;
+    viewerForward = glm::rotate(viewerForward, viewAngleHoriz, viewerUp);
+    viewerLeft = glm::cross(viewerUp, viewerForward);
+
+    float viewAngleVert = (double)mouseMovement[1] * -radiansPerMousePosPitch;
+    viewerForward = glm::rotate(viewerForward, viewAngleVert, viewerLeft);
+    viewerUp = glm::cross(viewerForward, viewerLeft);
+
+    if (inputs.conatinsInput(INPUTS::ROTATEL) != inputs.conatinsInput(INPUTS::ROTATER)) {
+        float viewAngleFront = -radiansPerSecondRoll * timeDif * (inputs.conatinsInput(INPUTS::ROTATER) ? 1 : -1);
+        viewerUp = glm::rotate(viewerUp, viewAngleFront, viewerForward);
+        viewerLeft = glm::cross(viewerUp, viewerForward);
+    }
+
+    viewerForward = glm::normalize(viewerForward);
+    viewerLeft = glm::normalize(viewerLeft);
+    viewerUp = glm::normalize(viewerUp);
+    
+    updateMatrices();
+
+    // POSITION
+
+    if (inputs.conatinsInput(INPUTS::FORWARD) != inputs.conatinsInput(INPUTS::BACKWARD))
+        viewerPosition += viewerForward * glm::vec3(inputs.conatinsInput(INPUTS::FORWARD) ? forwardSpeed * timeDif : -backSpeed * timeDif);
+
+    if (inputs.conatinsInput(INPUTS::LEFT) != inputs.conatinsInput(INPUTS::RIGHT))
+        viewerPosition += viewerLeft * glm::vec3(inputs.conatinsInput(INPUTS::RIGHT) ? -strafeSpeed * timeDif : strafeSpeed * timeDif);
+
+    if (inputs.conatinsInput(INPUTS::UP) != inputs.conatinsInput(INPUTS::DOWN))
+        viewerPosition += viewerUp * glm::vec3(inputs.conatinsInput(INPUTS::UP) ? -strafeSpeed * timeDif : strafeSpeed * timeDif);
+}
+
+void Aidanic::updateMatrices() {
+    projInverse = glm::inverse(glm::perspective(glm::radians(fovDegrees), static_cast<float>(windowSize[0] / windowSize[1]), nearPlane, farPlane));
+    viewInverse = glm::inverse(glm::lookAt(viewerPosition, viewerPosition + viewerForward, viewerUp));
 }
 
 void Aidanic::cleanUp() {
