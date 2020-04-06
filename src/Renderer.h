@@ -1,11 +1,5 @@
 #pragma once
 
-/*
-    todo: replace error checks with macro or something?
-    write rtx code
-    write descriptor set allocation system
-*/
-
 #include "tools/Log.h"
 
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE

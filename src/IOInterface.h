@@ -6,6 +6,11 @@
 #include <map>
 #include <vector>
 
+enum struct CONTROL_SCHEME {
+	GAMEPLAY, // captured mouse (activate with key_1)
+	EDITOR // free mouse controls (activate with key_2)
+};
+
 class Aidanic;
 
 enum struct INPUTS {
@@ -22,7 +27,7 @@ enum struct INPUTS {
 	MOUSEL		= (1 << 9),
 	MOUSER		= (1 << 10),
 	INTERACTL	= (1 << 11),
-	INTERACTR	= (1 << 12)
+	INTERACTR	= (1 << 12),
 }; // do not excede 32 values!
 
 union Inputs {
@@ -43,10 +48,10 @@ public:
 
 	int windowCloseCheck() { return glfwWindowShouldClose(window); };
 	void minimizeSuspend(); // doesn't return unless window isn't minimized
-	void pollEvents() { glfwPollEvents(); }; // updates glfw state (key presses etc)
+	void pollEvents(); // updates glfw state (key presses etc)
 
 	Inputs getInputs();
-	void getMouseChange(double& mouseX, double& mouseY);
+	std::array<double, 2> getMouseChange();
 
 	void cleanUp();
 
@@ -54,11 +59,19 @@ private:
 
 	Aidanic* aidanicApp;
     GLFWwindow* window = nullptr;
-	ImGuiIO& imGuiIO;
+	ImGuiIO imGuiIO;
 
+	bool mouseLeftClickDown = false;
     uint32_t windowSize[2] = { 0, 0 };
-    std::map<uint32_t, Inputs> keyBindings; // <GLFW_KEY, INPUTS>
 	double mousePosPrev[2] = { 0.0, 0.0 };
+	CONTROL_SCHEME controlScheme = CONTROL_SCHEME::GAMEPLAY;
+
+	enum struct INPUTS_INTERNAL {
+		GAMEPLAY_MODE,
+		EDITOR_MODE
+	};
+    std::map<uint32_t, INPUTS> keyBindings;
+	std::map<INPUTS_INTERNAL, uint32_t> keyBindingsInternal;
 
 	void setKeyBindings(); // initialization function: populates keyBindings map
 };

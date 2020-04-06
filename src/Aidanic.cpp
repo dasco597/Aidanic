@@ -82,8 +82,7 @@ void Aidanic::processInputs() {
     timePrev = high_resolution_clock::now();
 
     // get mouse inputs from window interface
-    double mouseMovement[2];
-    ioInterface.getMouseChange(mouseMovement[0], mouseMovement[1]);
+    std::array<double, 2> mouseMovement = ioInterface.getMouseChange();
 
     // LOOK
 
@@ -91,12 +90,12 @@ void Aidanic::processInputs() {
     viewerForward = glm::rotate(viewerForward, viewAngleHoriz, viewerUp);
     viewerLeft = glm::cross(viewerUp, viewerForward);
 
-    float viewAngleVert = (double)mouseMovement[1] * -radiansPerMousePosPitch;
+    float viewAngleVert = (double)mouseMovement[1] * radiansPerMousePosPitch;
     viewerForward = glm::rotate(viewerForward, viewAngleVert, viewerLeft);
     viewerUp = glm::cross(viewerForward, viewerLeft);
 
     if (inputs.conatinsInput(INPUTS::ROTATEL) != inputs.conatinsInput(INPUTS::ROTATER)) {
-        float viewAngleFront = -radiansPerSecondRoll * timeDif * (inputs.conatinsInput(INPUTS::ROTATER) ? 1 : -1);
+        float viewAngleFront = radiansPerSecondRoll * timeDif * (inputs.conatinsInput(INPUTS::ROTATER) ? 1 : -1);
         viewerUp = glm::rotate(viewerUp, viewAngleFront, viewerForward);
         viewerLeft = glm::cross(viewerUp, viewerForward);
     }
@@ -116,7 +115,7 @@ void Aidanic::processInputs() {
         viewerPosition += viewerLeft * glm::vec3(inputs.conatinsInput(INPUTS::RIGHT) ? -strafeSpeed * timeDif : strafeSpeed * timeDif);
 
     if (inputs.conatinsInput(INPUTS::UP) != inputs.conatinsInput(INPUTS::DOWN))
-        viewerPosition += viewerUp * glm::vec3(inputs.conatinsInput(INPUTS::UP) ? -strafeSpeed * timeDif : strafeSpeed * timeDif);
+        viewerPosition += viewerUp * glm::vec3(inputs.conatinsInput(INPUTS::UP) ? strafeSpeed * timeDif : -strafeSpeed * timeDif);
 }
 
 void Aidanic::updateMatrices() {

@@ -43,8 +43,8 @@ private:
     float strafeSpeed = 4; // meters per second
     float forwardSpeed = 4;
     float backSpeed = 4;
-    float radiansPerMousePosYaw = 0.002f; // horizontal - z axis
-    float radiansPerMousePosPitch = 0.002f; // vertical - y axis
+    float radiansPerMousePosYaw = 0.001f; // horizontal - z axis
+    float radiansPerMousePosPitch = 0.0008f; // vertical - y axis
     float radiansPerSecondRoll = _AID_PI / 4.0f; // x axis
 
     glm::vec3 viewerPosition    = glm::vec3(0.f);			// your position in the world

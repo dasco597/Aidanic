@@ -1,12 +1,15 @@
-file(GLOB_RECURSE HEADERS ${CMAKE_CURRENT_SOURCE_DIR}/*.h)
-file(GLOB_RECURSE SOURCE  ${CMAKE_CURRENT_SOURCE_DIR}/*.cpp)
-file(GLOB_RECURSE SHADERS ${CMAKE_CURRENT_SOURCE_DIR}/shaders/*.rgen
-                          ${CMAKE_CURRENT_SOURCE_DIR}/shaders/*.rmiss
-                          ${CMAKE_CURRENT_SOURCE_DIR}/shaders/*.rchit
-                          ${CMAKE_CURRENT_SOURCE_DIR}/shaders/*.vert
-                          ${CMAKE_CURRENT_SOURCE_DIR}/shaders/*.frag)
+file(GLOB_RECURSE HEADERS   ${CMAKE_CURRENT_SOURCE_DIR}/*.h)
+file(GLOB_RECURSE SOURCE    ${CMAKE_CURRENT_SOURCE_DIR}/*.cpp)
+file(GLOB_RECURSE SHADERS   ${CMAKE_CURRENT_SOURCE_DIR}/shaders/*.rgen
+                            ${CMAKE_CURRENT_SOURCE_DIR}/shaders/*.rmiss
+                            ${CMAKE_CURRENT_SOURCE_DIR}/shaders/*.rchit
+                            ${CMAKE_CURRENT_SOURCE_DIR}/shaders/*.vert
+                            ${CMAKE_CURRENT_SOURCE_DIR}/shaders/*.frag)
+set(IMGUI                   ${PROJECT_SOURCE_DIR}/vendor/imgui/imgui.cpp
+                            ${PROJECT_SOURCE_DIR}/vendor/imgui/imgui_draw.cpp
+                            ${PROJECT_SOURCE_DIR}/vendor/imgui/imgui_widgets.cpp)
 
-add_executable(Aidanic ${HEADERS} ${SOURCE} ${SHADERS})
+add_executable(Aidanic ${HEADERS} ${SOURCE} ${SHADERS} ${IMGUI})
 
 target_link_libraries(Aidanic glfw)
 target_link_libraries(Aidanic ${Vulkan_LIBRARY})
@@ -27,6 +30,7 @@ add_custom_target(Aidanic_Shaders DEPENDS ${SPIRV_BINARY_FILES})
 add_dependencies(Aidanic Aidanic_Shaders)
 
 # visual studio config
-source_group("shaders" FILES ${SHADERS})	
+source_group("shaders" FILES ${SHADERS})
+source_group("imgui" FILES ${IMGUI})
 set_property(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT Aidanic)
 set_property(TARGET Aidanic PROPERTY VS_DEBUGGER_WORKING_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/$(Configuration)")

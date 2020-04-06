@@ -43,7 +43,7 @@ void IOInterface::init(Aidanic* application, std::vector<const char*>& requiredE
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
     imGuiIO = ImGui::GetIO();
-
+    
     ImGui::StyleColorsDark();
 
     setKeyBindings();
@@ -76,21 +76,50 @@ void IOInterface::minimizeSuspend() {
     }
 }
 
+void IOInterface::pollEvents() {
+    glfwPollEvents();
+    mouseLeftClickDown = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_1);
+
+    // update control scheme
+    if (glfwGetKey(window, keyBindingsInternal[INPUTS_INTERNAL::GAMEPLAY_MODE]) == GLFW_PRESS) {
+        controlScheme = CONTROL_SCHEME::GAMEPLAY;
+        glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+    } else if (glfwGetKey(window, keyBindingsInternal[INPUTS_INTERNAL::EDITOR_MODE]) == GLFW_PRESS){
+        controlScheme = CONTROL_SCHEME::EDITOR;
+        glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+    }
+};
+
 Inputs IOInterface::getInputs() {
     Inputs inputs = { INPUTS::NONE };
     for (auto& [key, input] : keyBindings) {
         int state = glfwGetKey(window, key);
-        if (state == GLFW_PRESS) inputs.uint |= input.uint;
+        if (state == GLFW_PRESS) inputs.uint |= static_cast<uint32_t>(input);
     }
     return inputs;
 }
 
-void IOInterface::getMouseChange(double& mouseX, double& mouseY) {
+std::array<double, 2> IOInterface::getMouseChange() {
+    std::array<double, 2> deltaPos = { 0.0, 0.0 };
     double mousePosCurrent[2];
-    glfwGetCursorPos(window, &mousePosCurrent[0], &mousePosCurrent[1]); // get current mouse position
-    mouseX = mousePosCurrent[0] - mousePosPrev[0];
-    mouseY = mousePosCurrent[1] - mousePosPrev[1];
-    glfwGetCursorPos(window, &mousePosPrev[0], &mousePosPrev[1]); // set previous position
+    glfwGetCursorPos(window, &mousePosCurrent[0], &mousePosCurrent[1]);
+
+    switch (controlScheme) {
+    case CONTROL_SCHEME::GAMEPLAY:
+        deltaPos[0] = mousePosCurrent[0] - mousePosPrev[0];
+        deltaPos[1] = mousePosCurrent[1] - mousePosPrev[1];
+        break;
+    case CONTROL_SCHEME::EDITOR:
+        if (mouseLeftClickDown) {
+            deltaPos[0] = mousePosCurrent[0] - mousePosPrev[0];
+            deltaPos[1] = mousePosCurrent[1] - mousePosPrev[1];
+        }
+    }
+    
+    mousePosPrev[0] = mousePosCurrent[0];
+    mousePosPrev[1] = mousePosCurrent[1];
+
+    return deltaPos;
 }
 
 void IOInterface::cleanUp() {
@@ -101,25 +130,28 @@ void IOInterface::cleanUp() {
 }
 
 void IOInterface::setKeyBindings() {
-    keyBindings[GLFW_KEY_ESCAPE].i      = INPUTS::ESC;
+    keyBindings[GLFW_KEY_ESCAPE] = INPUTS::ESC;
 
-    keyBindings[GLFW_KEY_W].i           = INPUTS::UP;
-    keyBindings[GLFW_KEY_A].i           = INPUTS::LEFT;
-    keyBindings[GLFW_KEY_S].i           = INPUTS::DOWN;
-    keyBindings[GLFW_KEY_D].i           = INPUTS::RIGHT;
-    keyBindings[GLFW_KEY_Q].i           = INPUTS::ROTATEL;
-    keyBindings[GLFW_KEY_E].i           = INPUTS::ROTATER;
+    keyBindings[GLFW_KEY_W]             = INPUTS::UP;
+    keyBindings[GLFW_KEY_A]             = INPUTS::LEFT;
+    keyBindings[GLFW_KEY_S]             = INPUTS::DOWN;
+    keyBindings[GLFW_KEY_D]             = INPUTS::RIGHT;
+    keyBindings[GLFW_KEY_Q]             = INPUTS::ROTATEL;
+    keyBindings[GLFW_KEY_E]             = INPUTS::ROTATER;
 
-    keyBindings[GLFW_KEY_UP].i          = INPUTS::UP;
-    keyBindings[GLFW_KEY_DOWN].i        = INPUTS::DOWN;
-    keyBindings[GLFW_KEY_LEFT].i        = INPUTS::LEFT;
-    keyBindings[GLFW_KEY_RIGHT].i       = INPUTS::RIGHT;
-    keyBindings[GLFW_KEY_PAGE_UP].i     = INPUTS::ROTATEL;
-    keyBindings[GLFW_KEY_PAGE_DOWN].i   = INPUTS::ROTATER;
+    keyBindings[GLFW_KEY_UP]            = INPUTS::UP;
+    keyBindings[GLFW_KEY_DOWN]          = INPUTS::DOWN;
+    keyBindings[GLFW_KEY_LEFT]          = INPUTS::LEFT;
+    keyBindings[GLFW_KEY_RIGHT]         = INPUTS::RIGHT;
+    keyBindings[GLFW_KEY_PAGE_UP]       = INPUTS::ROTATEL;
+    keyBindings[GLFW_KEY_PAGE_DOWN]     = INPUTS::ROTATER;
 
-    keyBindings[GLFW_KEY_SPACE].i       = INPUTS::FORWARD;
-    keyBindings[GLFW_KEY_LEFT_SHIFT].i  = INPUTS::BACKWARD;
+    keyBindings[GLFW_KEY_SPACE]         = INPUTS::FORWARD;
+    keyBindings[GLFW_KEY_LEFT_SHIFT]    = INPUTS::BACKWARD;
 
-    keyBindings[GLFW_KEY_Z].i           = INPUTS::INTERACTL;
-    keyBindings[GLFW_KEY_X].i           = INPUTS::INTERACTR;
+    keyBindings[GLFW_KEY_Z]             = INPUTS::INTERACTL;
+    keyBindings[GLFW_KEY_X]             = INPUTS::INTERACTR;
+
+    keyBindingsInternal[INPUTS_INTERNAL::GAMEPLAY_MODE] = GLFW_KEY_1;
+    keyBindingsInternal[INPUTS_INTERNAL::EDITOR_MODE]   = GLFW_KEY_2;
 }
