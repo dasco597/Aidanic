@@ -1,6 +1,7 @@
 #pragma once
 
-#include "tools/Log.h"
+#include "tools/VkHelper.h"
+#include "ImguiVk.h"
 
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
 //#define GLM_FORCE_DEFAULT_ALIGNED_GENTYPES
@@ -9,76 +10,20 @@
 #include <vulkan/vulkan_core.h>
 
 #include <vector>
-#include <optional>
 #include <string>
 
-// Check vulkan result macro
-#define VK_CHECK_RESULT(result, ...) if (result != VK_SUCCESS) { AID_TRACE("vkResult = {}", result); AID_ERROR(__VA_ARGS__); }
-
-#define VK_ALLOCATOR nullptr
-
-struct Vertex { glm::vec3 pos; };
-struct Model {
-    std::vector<Vertex> vertices;
-    std::vector<uint32_t> indices;
-};
-
 class Aidanic;
+class ImGuiVk;
 
 class Renderer {
+    friend ImGuiVk;
+
 public:
     void init(Aidanic* app, std::vector<const char*>& requiredExtensions, Model model, glm::mat4 viewInverse, glm::mat4 projInverse, glm::vec3 cameraPos);
-    void drawFrame(bool framebufferResized, glm::mat4 viewInverse, glm::mat4 projInverse, glm::vec3 cameraPos);
+    void drawFrame(bool framebufferResized, glm::mat4 viewInverse, glm::mat4 projInverse, glm::vec3 cameraPos, bool renderImGui = false, ImGuiVk* imGuiRenderer = nullptr);
     void cleanUp();
 
 private:
-#pragma region STRUCT_DEFINITIONS
-
-    struct QueueFamilyIndices {
-        std::optional<uint32_t> graphicsFamily;
-        std::optional<uint32_t> presentFamily;
-
-        bool isComplete() {
-            return graphicsFamily.has_value() && presentFamily.has_value();
-        }
-    };
-
-    struct SwapChainSupportDetails {
-        VkSurfaceCapabilitiesKHR capabilities;
-        std::vector<VkSurfaceFormatKHR> formats;
-        std::vector<VkPresentModeKHR> presentModes;
-    };
-
-    struct Buffer {
-        VkBuffer buffer;
-        VkDeviceMemory memory;
-        VkDeviceSize size = static_cast<VkDeviceSize>(0);
-        VkDeviceSize dynamicStride = 0;
-    };
-
-    struct StorageImage {
-        VkDeviceMemory memory;
-        VkImage image;
-        VkImageView view;
-        VkFormat format;
-    };
-
-    struct AccelerationStructure {
-        VkDeviceMemory memory;
-        VkAccelerationStructureNV accelerationStructure;
-        uint64_t handle;
-    };
-
-    struct BLASInstance {
-        glm::mat3x4 transform;
-        uint32_t instanceId : 24;
-        uint32_t mask : 8;
-        uint32_t instanceOffset : 24;
-        uint32_t flags : 8;
-        uint64_t accelerationStructureHandle;
-    };
-
-#pragma endregion
 #pragma region VARIABLES
 
     Aidanic* aidanicApp;
@@ -90,6 +35,7 @@ private:
     VkDevice device;
     VkPhysicalDevice physicalDevice;
     VkPhysicalDeviceProperties physicalDeviceProperties{};
+    VkMemoryRequirements memoryRequirements{};
 
     struct {
         VkQueue graphics;
@@ -100,16 +46,15 @@ private:
         VkSwapchainKHR swapchain;
         std::vector<VkImage> images;
         int numImages = 0;
-        VkFormat imageFormat;
+        VkFormat format;
         VkExtent2D extent;
         std::vector<VkImageView> imageViews;
     } swapchain;
 
     VkPhysicalDeviceRayTracingPropertiesNV rayTracingProperties{};
-    StorageImage renderImage;
-    AccelerationStructure bottomLevelAS, topLevelAS;
-    Buffer shaderBindingTable;
-    std::vector<VkShaderModule> shaderModules;
+    Vk::StorageImage renderImage;
+    Vk::AccelerationStructure bottomLevelAS, topLevelAS;
+    Vk::Buffer shaderBindingTable;
 
     VkPipeline pipeline;
     VkPipelineLayout pipelineLayout;
@@ -119,9 +64,10 @@ private:
     VkDescriptorPool descriptorPool;
 
     VkCommandPool commandPool;
-    std::vector<VkCommandBuffer> commandBuffersDraw;
+    std::vector<VkCommandBuffer> commandBuffersRender;
+    std::vector<VkCommandBuffer> commandBuffersImageCopy;
 
-    Buffer vertexBuffer, indexBuffer, uboBuffer;
+    Vk::Buffer vertexBuffer, indexBuffer, uboBuffer;
 
     struct UniformData {
         glm::mat4 viewInverse = glm::mat4(1.0f);
@@ -129,10 +75,8 @@ private:
         glm::vec4 cameraPos = glm::vec4(0.0f);
     } uniformData;
 
-    std::vector<VkSemaphore> imageAvailableSemaphores;
-    std::vector<VkSemaphore> renderFinishedSemaphores;
-    std::vector<VkFence> inFlightFences;
-    std::vector<VkFence> imagesInFlight;
+    std::vector<VkSemaphore> semaphoresImageAvailable, semaphoresRenderFinished, semaphoresImGuiFinished, semaphoresImageCopyFinished;
+    std::vector<VkFence> inFlightFences, imagesInFlight;
     size_t currentFrame = 0;
 
     const std::array<const char*, 1> validationLayers = {
@@ -167,8 +111,8 @@ private:
     void createRayTracingPipeline();
     void createShaderBindingTable();
     void createDescriptorSets();
-    void createCommandBuffers();
-
+    void createCommandBuffersRender();
+    void createCommandBuffersImageCopy();
     void createBottomLevelAccelerationStructure(const VkGeometryNV* geometries);
     void createTopLevelAccelerationStructure();
 
@@ -190,32 +134,22 @@ private:
     void testDebugMessenger();
     
     bool isDeviceSuitable(VkPhysicalDevice device);
-    QueueFamilyIndices findQueueFamilies(VkPhysicalDevice device);
     bool checkDeviceExtensionSupport(VkPhysicalDevice device);
-    SwapChainSupportDetails querySwapChainSupport(VkPhysicalDevice device);
     std::vector<const char*> getRequiredExtensions();
     
     VkSurfaceFormatKHR chooseSwapSurfaceFormat(const std::vector<VkSurfaceFormatKHR>& availableFormats);
     VkPresentModeKHR chooseSwapPresentMode(const std::vector<VkPresentModeKHR>& availablePresentModes);
     VkExtent2D chooseSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities);
 
-    static std::vector<char> readFile(const std::string filename);
-    VkShaderModule createShaderModule(const std::vector<char>& code);
-    VkPipelineShaderStageCreateInfo loadShader(const std::string filename, VkShaderStageFlagBits stage);
-
-    VkCommandBuffer beginSingleTimeCommands();
-    void endSingleTimeCommands(VkCommandBuffer commandBuffer);
-
     void recordImageLayoutTransition(VkCommandBuffer& commandBuffer, VkImage image, VkImageLayout oldImageLayout, VkImageLayout newImageLayout,
         VkImageSubresourceRange subresourceRange, VkPipelineStageFlags srcStageMask = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VkPipelineStageFlags dstStageMask = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT);
 
-    void createBuffer(Buffer& buffer, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkDeviceSize size);
-    void uploadBufferDeviceLocal(Buffer& buffer, void* data, VkDeviceSize size, VkDeviceSize bufferOffset = 0);
-    void uploadBufferHostVisible(Buffer& buffer, void* data, VkDeviceSize size, VkDeviceSize bufferOffset = 0);
-    void destroyBuffer(Buffer& buffer);
+    void createBuffer(Vk::Buffer& buffer, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkDeviceSize size);
+    void uploadBufferDeviceLocal(Vk::Buffer& buffer, void* data, VkDeviceSize size, VkDeviceSize bufferOffset = 0);
+    void uploadBufferHostVisible(Vk::Buffer& buffer, void* data, VkDeviceSize size, VkDeviceSize bufferOffset = 0);
+    void destroyBuffer(Vk::Buffer& buffer);
 
     VkDeviceSize getUBOOffsetAligned(VkDeviceSize stride);
-    uint32_t findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties);
 
     // vulkan pointers
 

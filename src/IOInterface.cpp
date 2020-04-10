@@ -1,6 +1,7 @@
 #include "IOInterface.h"
 #include "Aidanic.h"
 #include "tools/Log.h"
+#include <imgui.h>
 
 void IOInterface::init(Aidanic* application, std::vector<const char*>& requiredExtensions, uint32_t width, uint32_t height) {
     AID_INFO("Initializing interface...");
@@ -37,14 +38,6 @@ void IOInterface::init(Aidanic* application, std::vector<const char*>& requiredE
     for (int e = 0; e < glfwExtensionCount; e++) {
         requiredExtensions.push_back(glfwExtensions[e]);
     }
-
-    // DEAR IMGUI
-
-    IMGUI_CHECKVERSION();
-    ImGui::CreateContext();
-    imGuiIO = ImGui::GetIO();
-    
-    ImGui::StyleColorsDark();
 
     setKeyBindings();
 }
@@ -88,7 +81,68 @@ void IOInterface::pollEvents() {
         controlScheme = CONTROL_SCHEME::EDITOR;
         glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
     }
-};
+
+    double current_time = glfwGetTime();
+    timeDelta = time > 0.0 ? (float)(current_time - time) : (float)(1.0f / 60.0f);
+    time = current_time;
+}
+
+void IOInterface::updateImGui() {
+    ImGuiIO& io = ImGui::GetIO();
+
+    // Setup display size (every frame to accommodate for window resizing)
+    int w, h;
+    int display_w, display_h;
+    glfwGetWindowSize(window, &w, &h);
+    glfwGetFramebufferSize(window, &display_w, &display_h);
+    io.DisplaySize = ImVec2((float)w, (float)h);
+    if (w > 0 && h > 0)
+        io.DisplayFramebufferScale = ImVec2((float)display_w / w, (float)display_h / h);
+
+    // Setup time step
+    io.DeltaTime = timeDelta;
+
+    // mouse buttons
+    static bool mouseJustPressed[5] = { false, false, false, false, false };
+    for (int i = 0; i < 5; i++) {
+        // If a mouse press event came, always pass it as "mouse held this frame", so we don't miss click-release events that are shorter than 1 frame.
+        io.MouseDown[i] = mouseJustPressed[i] || glfwGetMouseButton(window, i) != 0;
+        mouseJustPressed[i] = false;
+    }
+
+    // Update mouse position
+    const ImVec2 mouse_pos_backup = io.MousePos;
+    io.MousePos = ImVec2(-FLT_MAX, -FLT_MAX);
+    const bool focused = glfwGetWindowAttrib(window, GLFW_FOCUSED) != 0;
+    if (focused)
+    {
+        if (io.WantSetMousePos)
+        {
+            glfwSetCursorPos(window, (double)mouse_pos_backup.x, (double)mouse_pos_backup.y);
+        } else
+        {
+            double mouse_x, mouse_y;
+            glfwGetCursorPos(window, &mouse_x, &mouse_y);
+            io.MousePos = ImVec2((float)mouse_x, (float)mouse_y);
+        }
+    }
+
+    // mouse cursor
+    if ((io.ConfigFlags & ImGuiConfigFlags_NoMouseCursorChange) || glfwGetInputMode(window, GLFW_CURSOR) == GLFW_CURSOR_DISABLED)
+        return;
+
+    static GLFWcursor* g_MouseCursors[ImGuiMouseCursor_COUNT] = {};
+    ImGuiMouseCursor imgui_cursor = ImGui::GetMouseCursor();
+    if (imgui_cursor == ImGuiMouseCursor_None || io.MouseDrawCursor) {
+        // Hide OS mouse cursor if imgui is drawing it or if it wants no cursor
+        glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_HIDDEN);
+    } else {
+        // Show OS mouse cursor
+        // FIXME-PLATFORM: Unfocused windows seems to fail changing the mouse cursor with GLFW 3.2, but 3.3 works here.
+        glfwSetCursor(window, g_MouseCursors[imgui_cursor] ? g_MouseCursors[imgui_cursor] : g_MouseCursors[ImGuiMouseCursor_Arrow]);
+        glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+    }
+}
 
 Inputs IOInterface::getInputs() {
     Inputs inputs = { INPUTS::NONE };
@@ -114,6 +168,7 @@ std::array<double, 2> IOInterface::getMouseChange() {
             deltaPos[0] = mousePosCurrent[0] - mousePosPrev[0];
             deltaPos[1] = mousePosCurrent[1] - mousePosPrev[1];
         }
+        break;
     }
     
     mousePosPrev[0] = mousePosCurrent[0];

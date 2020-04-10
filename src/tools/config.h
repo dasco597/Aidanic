@@ -22,11 +22,12 @@
 #define _WINDOW_SIZE_Y 800
 
 #define _MAX_FRAMES_IN_FLIGHT 2
-
 #define _AID_PI 3.14159f
 
+//#define ARRAY_SIZE(_ARR) ((int)(sizeof(_ARR) / sizeof(*_ARR)) // Size of a static C-style array. Don't use on pointers!
+
 namespace _CONFIG {
-    static char* getAssetPath() {
+    static char* getAssetsPath() {
         return "assets/";
     }
 }

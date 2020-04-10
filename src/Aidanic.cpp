@@ -33,7 +33,7 @@ int main() {
 void Aidanic::Run() {
     init();
     loop();
-    cleanUp();
+    cleanup();
 }
 
 void Aidanic::init() {
@@ -54,6 +54,17 @@ void Aidanic::init() {
 
     renderer.init(this, requiredExtensions, model, viewInverse, projInverse, viewerPosition);
     AID_INFO("Vulkan renderer RTX initialized");
+
+    initImGui();
+    AID_INFO("ImGui initialized");
+}
+
+void Aidanic::initImGui() {
+    IMGUI_CHECKVERSION();
+    ImGui::CreateContext();
+    ImGui::StyleColorsDark();
+
+    imGuiRenderer.init(&renderer);
 }
 
 VkResult Aidanic::createVkSurface(VkInstance& instance, const VkAllocationCallbacks* allocator, VkSurfaceKHR* surface) {
@@ -63,14 +74,54 @@ VkResult Aidanic::createVkSurface(VkInstance& instance, const VkAllocationCallba
 void Aidanic::loop() {
     AID_INFO("~ Entering main loop...");
     while (!quit && !ioInterface.windowCloseCheck()) {
-        // submit draw commands for this frame
-        renderer.drawFrame(windowResized, viewInverse, projInverse, viewerPosition);
-
         // input handling
         ioInterface.pollEvents();
         inputs = ioInterface.getInputs();
         processInputs();
+
+        // prepare ImGui
+        if (renderImGui) updateImGui();
+
+        // submit draw commands for this frame
+        renderer.drawFrame(windowResized, viewInverse, projInverse, viewerPosition, renderImGui, &imGuiRenderer);
     }
+}
+
+void Aidanic::updateImGui() {
+    ImGuiIO& io = ImGui::GetIO();
+    if (!io.Fonts->IsBuilt()) {
+        AID_WARN("imGui font atlas not built!");
+    }
+
+    ioInterface.updateImGui();
+    ImGui::NewFrame();
+
+    // test window
+    static bool show_window = true;
+    static ImVec4 clear_color = ImVec4(0.45f, 0.55f, 0.60f, 1.00f);
+    {
+        static float f = 0.0f;
+        static int counter = 0;
+
+        ImGui::Begin("Hello, world!");                          // Create a window called "Hello, world!" and append into it.
+
+        ImGui::Text("This is some useful text.");               // Display some text (you can use a format strings too)
+        ImGui::Checkbox("Demo Window", &show_window);      // Edit bools storing our window open/close state
+
+        ImGui::SliderFloat("float", &f, 0.0f, 1.0f);            // Edit 1 float using a slider from 0.0f to 1.0f
+        ImGui::ColorEdit3("clear color", (float*)&clear_color); // Edit 3 floats representing a color
+
+        if (ImGui::Button("Button"))                            // Buttons return true when clicked (most widgets return true when edited/activated)
+            counter++;
+        ImGui::SameLine();
+        ImGui::Text("counter = %d", counter);
+
+        ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
+        ImGui::End();
+    }
+
+    ImGui::Render();
+    memcpy(imGuiRenderer.getpClearValue(), &clear_color, 4 * sizeof(float));
 }
 
 void Aidanic::processInputs() {
@@ -123,8 +174,12 @@ void Aidanic::updateMatrices() {
     viewInverse = glm::inverse(glm::lookAt(viewerPosition, viewerPosition + viewerForward, viewerUp));
 }
 
-void Aidanic::cleanUp() {
+void Aidanic::cleanup() {
     AID_INFO("~ Shutting down Aidanic...");
+
+    imGuiRenderer.cleanup();
+    ImGui::DestroyContext();
+    AID_INFO("ImGui cleaned up");
 
     renderer.cleanUp();
     AID_INFO("Vulkan renderer RTX cleaned up");

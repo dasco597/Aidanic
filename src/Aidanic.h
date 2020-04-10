@@ -2,8 +2,10 @@
 
 #include "IOInterface.h"
 #include "Renderer.h"
+#include "ImGuiVk.h"
 #include "tools/config.h"
 
+#include <imgui.h>
 #include <glm.hpp>
 #include <atomic>
 
@@ -17,20 +19,24 @@ public:
 
 private:
     void init();
+    void initImGui();
 
     void loop();
+    void updateImGui();
     void processInputs();
     void updateMatrices();
 
-    void cleanUp();
+    void cleanup();
 
     IOInterface ioInterface;
     Renderer renderer;
+    ImGuiVk imGuiRenderer;
 
     // variables
 
     bool quit = false;
     std::atomic<bool> windowResized = false;
+    bool renderImGui = true;
     bool cleanedUp = false;
 
     std::array<int, 2> windowSize = { _WINDOW_SIZE_X, _WINDOW_SIZE_Y };

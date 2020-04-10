@@ -2,7 +2,6 @@
 
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
-#include <imgui.h>
 #include <map>
 #include <vector>
 
@@ -12,6 +11,7 @@ enum struct CONTROL_SCHEME {
 };
 
 class Aidanic;
+struct ImGuiIO;
 
 enum struct INPUTS {
 	NONE		= 0,
@@ -50,6 +50,7 @@ public:
 	void minimizeSuspend(); // doesn't return unless window isn't minimized
 	void pollEvents(); // updates glfw state (key presses etc)
 
+	void updateImGui();
 	Inputs getInputs();
 	std::array<double, 2> getMouseChange();
 
@@ -59,8 +60,8 @@ private:
 
 	Aidanic* aidanicApp;
     GLFWwindow* window = nullptr;
-	ImGuiIO imGuiIO;
 
+	double time = 0.0, timeDelta = 0.0;
 	bool mouseLeftClickDown = false;
     uint32_t windowSize[2] = { 0, 0 };
 	double mousePosPrev[2] = { 0.0, 0.0 };

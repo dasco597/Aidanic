@@ -1,12 +1,11 @@
 #include "Renderer.h"
 #include "Aidanic.h"
+#include "ImGuiVk.h"
 #include "tools/config.h"
 
 #include <array>
-#include <iostream>
 #include <stdexcept>
 #include <set>
-#include <fstream>
 
 #ifdef NDEBUG
 const bool enableValidationLayers = false;
@@ -15,7 +14,6 @@ const bool enableValidationLayers = true;
 #endif
 
 // TODO replace nullptr with VK_ALLOCATOR where relevant
-#define DEFAULT_FENCE_TIMEOUT 100000000000
 
 // shader files (relative to assets folder, _CONFIG::getAssetsPath())
 #define SHADER_SRC_RAYGEN "spirv/raygen.rgen.spv"
@@ -56,7 +54,8 @@ void Renderer::init(Aidanic* app, std::vector<const char*>& requiredExtensions, 
     createRayTracingPipeline();
     createShaderBindingTable();
     createDescriptorSets();
-    createCommandBuffers();
+    createCommandBuffersRender();
+    createCommandBuffersImageCopy();
 }
 
 void Renderer::createInstance(std::vector<const char*>& requiredExtensions) {
@@ -154,7 +153,7 @@ void Renderer::pickPhysicalDevice() {
 }
 
 void Renderer::createLogicalDevice() {
-    QueueFamilyIndices queueIndices = findQueueFamilies(physicalDevice);
+    Vk::QueueFamilyIndices queueIndices = Vk::findQueueFamilies(physicalDevice, surface);
 
     std::vector<VkDeviceQueueCreateInfo> queueCreateInfos;
     std::set<uint32_t> uniqueQueueFamilies = { queueIndices.graphicsFamily.value(), queueIndices.presentFamily.value() };
@@ -207,7 +206,7 @@ void Renderer::createLogicalDevice() {
 }
 
 void Renderer::createSwapChain() {
-    SwapChainSupportDetails swapChainSupport = querySwapChainSupport(physicalDevice);
+    Vk::SwapChainSupportDetails swapChainSupport = Vk::querySwapChainSupport(physicalDevice, surface);
 
     VkSurfaceFormatKHR surfaceFormat = chooseSwapSurfaceFormat(swapChainSupport.formats);
     VkPresentModeKHR presentMode = chooseSwapPresentMode(swapChainSupport.presentModes);
@@ -229,7 +228,7 @@ void Renderer::createSwapChain() {
     createInfo.imageArrayLayers = 1;
     createInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
 
-    QueueFamilyIndices queueIndices = findQueueFamilies(physicalDevice);
+    Vk::QueueFamilyIndices queueIndices = Vk::findQueueFamilies(physicalDevice, surface);
     uint32_t queueFamilyIndices[] = { queueIndices.graphicsFamily.value(), queueIndices.presentFamily.value() };
 
     if (queueIndices.graphicsFamily != queueIndices.presentFamily) {
@@ -252,12 +251,12 @@ void Renderer::createSwapChain() {
     vkGetSwapchainImagesKHR(device, swapchain.swapchain, &imageCount, swapchain.images.data());
     swapchain.numImages = imageCount;
 
-    swapchain.imageFormat = surfaceFormat.format;
+    swapchain.format = surfaceFormat.format;
     swapchain.extent = extent;
 }
 
 void Renderer::createCommandPool() {
-    QueueFamilyIndices queueFamilyIndices = findQueueFamilies(physicalDevice);
+    Vk::QueueFamilyIndices queueFamilyIndices = Vk::findQueueFamilies(physicalDevice, surface);
 
     VkCommandPoolCreateInfo poolInfo = {};
     poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
@@ -274,7 +273,7 @@ void Renderer::createImageViews() {
         createInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
         createInfo.image = swapchain.images[i];
         createInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
-        createInfo.format = swapchain.imageFormat;
+        createInfo.format = swapchain.format;
         createInfo.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
         createInfo.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
         createInfo.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
@@ -290,8 +289,11 @@ void Renderer::createImageViews() {
 }
 
 void Renderer::createSyncObjects() {
-    imageAvailableSemaphores.resize(_MAX_FRAMES_IN_FLIGHT);
-    renderFinishedSemaphores.resize(_MAX_FRAMES_IN_FLIGHT);
+    semaphoresImageAvailable.resize(_MAX_FRAMES_IN_FLIGHT);
+    semaphoresRenderFinished.resize(_MAX_FRAMES_IN_FLIGHT);
+    semaphoresImGuiFinished.resize(_MAX_FRAMES_IN_FLIGHT);
+    semaphoresImageCopyFinished.resize(_MAX_FRAMES_IN_FLIGHT);
+
     inFlightFences.resize(_MAX_FRAMES_IN_FLIGHT);
     imagesInFlight.resize(swapchain.numImages, VK_NULL_HANDLE);
 
@@ -303,8 +305,10 @@ void Renderer::createSyncObjects() {
     fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
 
     for (size_t i = 0; i < _MAX_FRAMES_IN_FLIGHT; i++) {
-        if (vkCreateSemaphore(device, &semaphoreInfo, nullptr, &imageAvailableSemaphores[i]) != VK_SUCCESS ||
-            vkCreateSemaphore(device, &semaphoreInfo, nullptr, &renderFinishedSemaphores[i]) != VK_SUCCESS ||
+        if (vkCreateSemaphore(device, &semaphoreInfo, nullptr, &semaphoresImageAvailable[i]) != VK_SUCCESS ||
+            vkCreateSemaphore(device, &semaphoreInfo, nullptr, &semaphoresRenderFinished[i]) != VK_SUCCESS ||
+            vkCreateSemaphore(device, &semaphoreInfo, nullptr, &semaphoresImGuiFinished[i]) != VK_SUCCESS ||
+            vkCreateSemaphore(device, &semaphoreInfo, nullptr, &semaphoresImageCopyFinished[i]) != VK_SUCCESS ||
             vkCreateFence(device, &fenceInfo, nullptr, &inFlightFences[i]) != VK_SUCCESS) {
             throw std::runtime_error("failed to create synchronization objects for a frame!");
         }
@@ -357,7 +361,7 @@ void Renderer::createScene(Model model) {
         0.0f, 0.0f, 1.0f, 0.0f
     };
 
-    BLASInstance geometryInstance{};
+    Vk::BLASInstance geometryInstance{};
     geometryInstance.transform = transform;
     geometryInstance.instanceId = 0;
     geometryInstance.mask = 0xff;
@@ -365,9 +369,9 @@ void Renderer::createScene(Model model) {
     geometryInstance.flags = VK_GEOMETRY_INSTANCE_TRIANGLE_CULL_DISABLE_BIT_NV;
     geometryInstance.accelerationStructureHandle = bottomLevelAS.handle;
 
-    Buffer instanceBuffer;
-    createBuffer(instanceBuffer, VK_BUFFER_USAGE_RAY_TRACING_BIT_NV, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT, sizeof(BLASInstance));
-    uploadBufferHostVisible(instanceBuffer, &geometryInstance, sizeof(BLASInstance));
+    Vk::Buffer instanceBuffer;
+    createBuffer(instanceBuffer, VK_BUFFER_USAGE_RAY_TRACING_BIT_NV, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT, sizeof(Vk::BLASInstance));
+    uploadBufferHostVisible(instanceBuffer, &geometryInstance, sizeof(Vk::BLASInstance));
 
     createTopLevelAccelerationStructure();
 
@@ -387,10 +391,10 @@ void Renderer::createScene(Model model) {
 
     const VkDeviceSize scratchBufferSize = std::max(memReqBottomLevelAS.memoryRequirements.size, memReqTopLevelAS.memoryRequirements.size);
 
-    Buffer scratchBuffer;
+    Vk::Buffer scratchBuffer;
     createBuffer(scratchBuffer, VK_BUFFER_USAGE_RAY_TRACING_BIT_NV, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, scratchBufferSize);
 
-    VkCommandBuffer cmdBuffer = beginSingleTimeCommands();
+    VkCommandBuffer cmdBuffer = Vk::beginSingleTimeCommands(device, commandPool);
 
     // build bottom-level acceleration structure
 
@@ -437,7 +441,7 @@ void Renderer::createScene(Model model) {
 
     vkCmdPipelineBarrier(cmdBuffer, VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_NV, VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_NV, 0, 1, &memoryBarrier, 0, 0, 0, 0);
 
-    endSingleTimeCommands(cmdBuffer);
+    Vk::endSingleTimeCommands(device, cmdBuffer, queues.graphics, commandPool);
 
     destroyBuffer(instanceBuffer);
     destroyBuffer(scratchBuffer);
@@ -467,7 +471,7 @@ void Renderer::createBottomLevelAccelerationStructure(const VkGeometryNV* geomet
     VkMemoryAllocateInfo memoryAllocateInfo{};
     memoryAllocateInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
     memoryAllocateInfo.allocationSize = memoryRequirements.memoryRequirements.size;
-    memoryAllocateInfo.memoryTypeIndex = findMemoryType(memoryRequirements.memoryRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+    memoryAllocateInfo.memoryTypeIndex = Vk::findMemoryType(physicalDevice, memoryRequirements.memoryRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
     VK_CHECK_RESULT(vkAllocateMemory(device, &memoryAllocateInfo, VK_ALLOCATOR, &bottomLevelAS.memory), "failed to allocate bottom level acceleration structure memory");
 
     VkBindAccelerationStructureMemoryInfoNV accelerationStructureMemoryInfo{};
@@ -502,7 +506,7 @@ void Renderer::createTopLevelAccelerationStructure() {
     VkMemoryAllocateInfo memoryAllocateInfo{};
     memoryAllocateInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
     memoryAllocateInfo.allocationSize = memoryRequirements.memoryRequirements.size;
-    memoryAllocateInfo.memoryTypeIndex = findMemoryType(memoryRequirements.memoryRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+    memoryAllocateInfo.memoryTypeIndex = Vk::findMemoryType(physicalDevice, memoryRequirements.memoryRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
     VK_CHECK_RESULT(vkAllocateMemory(device, &memoryAllocateInfo, VK_ALLOCATOR, &topLevelAS.memory), "failed to allocate top level acceleration structure memory");
 
     VkBindAccelerationStructureMemoryInfoNV accelerationStructureMemoryInfo{};
@@ -524,18 +528,21 @@ void Renderer::createShaderBindingTable() {
 }
 
 void Renderer::createRenderImage() {
+    renderImage.extent = swapchain.extent;
+    renderImage.format = swapchain.format;
+
     VkImageCreateInfo imageCI = {};
     imageCI.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
     imageCI.imageType = VK_IMAGE_TYPE_2D;
-    imageCI.format = swapchain.imageFormat;
-    imageCI.extent.width = swapchain.extent.width;
-    imageCI.extent.height = swapchain.extent.height;
+    imageCI.format = renderImage.format;
+    imageCI.extent.width = renderImage.extent.width;
+    imageCI.extent.height = renderImage.extent.height;
     imageCI.extent.depth = 1;
     imageCI.mipLevels = 1;
     imageCI.arrayLayers = 1;
     imageCI.samples = VK_SAMPLE_COUNT_1_BIT;
     imageCI.tiling = VK_IMAGE_TILING_OPTIMAL;
-    imageCI.usage = VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_STORAGE_BIT;
+    imageCI.usage = VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
     imageCI.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
     VK_CHECK_RESULT(vkCreateImage(device, &imageCI, VK_ALLOCATOR, &renderImage.image), "failed to create ray tracing storage image");
 
@@ -544,14 +551,14 @@ void Renderer::createRenderImage() {
     VkMemoryAllocateInfo memoryAllocateInfo{};
     memoryAllocateInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
     memoryAllocateInfo.allocationSize = memReqs.size;
-    memoryAllocateInfo.memoryTypeIndex = findMemoryType(memReqs.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+    memoryAllocateInfo.memoryTypeIndex = Vk::findMemoryType(physicalDevice, memReqs.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
     VK_CHECK_RESULT(vkAllocateMemory(device, &memoryAllocateInfo, nullptr, &renderImage.memory), "failed to allocate render image memory");
     VK_CHECK_RESULT(vkBindImageMemory(device, renderImage.image, renderImage.memory, 0), "failed to bind image memory");
 
     VkImageViewCreateInfo colorImageView{};
     colorImageView.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
     colorImageView.viewType = VK_IMAGE_VIEW_TYPE_2D;
-    colorImageView.format = swapchain.imageFormat;
+    colorImageView.format = renderImage.format;
     colorImageView.subresourceRange = {};
     colorImageView.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
     colorImageView.subresourceRange.baseMipLevel = 0;
@@ -561,9 +568,9 @@ void Renderer::createRenderImage() {
     colorImageView.image = renderImage.image;
     VK_CHECK_RESULT(vkCreateImageView(device, &colorImageView, nullptr, &renderImage.view), "failed to create render image view");
 
-    VkCommandBuffer cmdBuffer = beginSingleTimeCommands();
+    VkCommandBuffer cmdBuffer = Vk::beginSingleTimeCommands(device, commandPool);
     recordImageLayoutTransition(cmdBuffer, renderImage.image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL, { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 });
-    endSingleTimeCommands(cmdBuffer);
+    Vk::endSingleTimeCommands(device, cmdBuffer, queues.graphics, commandPool);
 }
 
 void Renderer::createRayTracingPipeline() {
@@ -603,9 +610,10 @@ void Renderer::createRayTracingPipeline() {
     vkCreatePipelineLayout(device, &pipelineLayoutCI, VK_ALLOCATOR, &pipelineLayout);
 
     std::array<VkPipelineShaderStageCreateInfo, SHADER_COUNT> shaderStages;
-    shaderStages[INDEX_RAYGEN] = loadShader(std::string(_CONFIG::getAssetPath()) + std::string(SHADER_SRC_RAYGEN), VK_SHADER_STAGE_RAYGEN_BIT_NV);
-    shaderStages[INDEX_MISS] = loadShader(std::string(_CONFIG::getAssetPath()) + std::string(SHADER_SRC_MISS), VK_SHADER_STAGE_MISS_BIT_NV);
-    shaderStages[INDEX_CLOSEST_HIT] = loadShader(std::string(_CONFIG::getAssetPath()) + std::string(SHADER_SRC_CLOSEST_HIT), VK_SHADER_STAGE_CLOSEST_HIT_BIT_NV);
+    std::array<VkShaderModule, SHADER_COUNT> shaderModules;
+    shaderStages[INDEX_RAYGEN] = Vk::loadShader(device, std::string(_CONFIG::getAssetsPath()) + std::string(SHADER_SRC_RAYGEN), VK_SHADER_STAGE_RAYGEN_BIT_NV, shaderModules[INDEX_RAYGEN]);
+    shaderStages[INDEX_MISS] = Vk::loadShader(device, std::string(_CONFIG::getAssetsPath()) + std::string(SHADER_SRC_MISS), VK_SHADER_STAGE_MISS_BIT_NV, shaderModules[INDEX_MISS]);
+    shaderStages[INDEX_CLOSEST_HIT] = Vk::loadShader(device, std::string(_CONFIG::getAssetsPath()) + std::string(SHADER_SRC_CLOSEST_HIT), VK_SHADER_STAGE_CLOSEST_HIT_BIT_NV, shaderModules[INDEX_CLOSEST_HIT]);
 
     // ray tracing shader groups
     std::array<VkRayTracingShaderGroupCreateInfoNV, SHADER_COUNT> shaderGroups{};
@@ -637,7 +645,6 @@ void Renderer::createRayTracingPipeline() {
 
     for (VkShaderModule shaderModule : shaderModules)
         vkDestroyShaderModule(device, shaderModule, VK_ALLOCATOR);
-    shaderModules.clear();
 }
 
 void Renderer::createDescriptorSets() {
@@ -714,14 +721,14 @@ void Renderer::createDescriptorSets() {
     vkUpdateDescriptorSets(device, static_cast<uint32_t>(writeDescriptorSets.size()), writeDescriptorSets.data(), 0, VK_NULL_HANDLE);
 }
 
-void Renderer::createCommandBuffers() {
-    commandBuffersDraw.resize(swapchain.numImages);
+void Renderer::createCommandBuffersRender() {
+    commandBuffersRender.resize(swapchain.numImages);
     VkCommandBufferAllocateInfo allocInfo{};
     allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-    allocInfo.commandBufferCount = commandBuffersDraw.size();
+    allocInfo.commandBufferCount = commandBuffersRender.size();
     allocInfo.commandPool = commandPool;
     allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-    vkAllocateCommandBuffers(device, &allocInfo, commandBuffersDraw.data());
+    vkAllocateCommandBuffers(device, &allocInfo, commandBuffersRender.data());
 
     // begin info
     VkCommandBufferBeginInfo beginInfo{};
@@ -734,8 +741,8 @@ void Renderer::createCommandBuffers() {
     VkDeviceSize bindingOffsetHitShader = rayTracingProperties.shaderGroupHandleSize * INDEX_CLOSEST_HIT;
     VkDeviceSize bindingStride = rayTracingProperties.shaderGroupHandleSize;
 
-    for (int i = 0; i < commandBuffersDraw.size(); i++) {
-        VkCommandBuffer& commandBuffer = commandBuffersDraw[i];
+    for (int i = 0; i < commandBuffersRender.size(); i++) {
+        VkCommandBuffer& commandBuffer = commandBuffersRender[i];
         VK_CHECK_RESULT(vkBeginCommandBuffer(commandBuffer, &beginInfo), "failed to begin command buffer");
 
         // ray tracing dispath
@@ -751,6 +758,28 @@ void Renderer::createCommandBuffers() {
             shaderBindingTable.buffer, bindingOffsetHitShader, bindingStride,
             VK_NULL_HANDLE, 0, 0,
             swapchain.extent.width, swapchain.extent.height, 1);
+
+        VK_CHECK_RESULT(vkEndCommandBuffer(commandBuffer), "failed to end rendering command buffer {}", i);
+    }
+}
+
+void Renderer::createCommandBuffersImageCopy() {
+    commandBuffersImageCopy.resize(swapchain.numImages);
+    VkCommandBufferAllocateInfo allocInfo{};
+    allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+    allocInfo.commandBufferCount = commandBuffersImageCopy.size();
+    allocInfo.commandPool = commandPool;
+    allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    vkAllocateCommandBuffers(device, &allocInfo, commandBuffersImageCopy.data());
+
+    // begin info
+    VkCommandBufferBeginInfo beginInfo{};
+    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    VkImageSubresourceRange subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
+
+    for (int i = 0; i < commandBuffersImageCopy.size(); i++) {
+        VkCommandBuffer& commandBuffer = commandBuffersImageCopy[i];
+        VK_CHECK_RESULT(vkBeginCommandBuffer(commandBuffer, &beginInfo), "failed to begin command buffer");
 
         // copy ray tracing output to swapchain image
 
@@ -796,11 +825,11 @@ void Renderer::createCommandBuffers() {
 
 // MAIN LOOP
 
-void Renderer::drawFrame(bool framebufferResized, glm::mat4 viewInverse, glm::mat4 projInverse, glm::vec3 cameraPos) {
+void Renderer::drawFrame(bool framebufferResized, glm::mat4 viewInverse, glm::mat4 projInverse, glm::vec3 cameraPos, bool renderImGui, ImGuiVk* imGuiRenderer) {
     vkWaitForFences(device, 1, &inFlightFences[currentFrame], VK_TRUE, DEFAULT_FENCE_TIMEOUT);
 
     uint32_t imageIndex;
-    VkResult resultAcquire = vkAcquireNextImageKHR(device, swapchain.swapchain, UINT64_MAX, imageAvailableSemaphores[currentFrame], VK_NULL_HANDLE, &imageIndex);
+    VkResult resultAcquire = vkAcquireNextImageKHR(device, swapchain.swapchain, UINT64_MAX, semaphoresImageAvailable[currentFrame], VK_NULL_HANDLE, &imageIndex);
 
     // TODO framebufferResized? debug and check result values
     if (resultAcquire == VK_ERROR_OUT_OF_DATE_KHR) {
@@ -817,38 +846,88 @@ void Renderer::drawFrame(bool framebufferResized, glm::mat4 viewInverse, glm::ma
     }
     imagesInFlight[imageIndex] = inFlightFences[currentFrame];
 
-    VkSemaphore waitSemaphores[] = { imageAvailableSemaphores[currentFrame] };
-    VkPipelineStageFlags waitStages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
-    VkSemaphore signalSemaphores[] = { renderFinishedSemaphores[currentFrame] };
+    // ray tracing dispatch
+    {
+        VkSemaphore signalSemaphores[] = { semaphoresRenderFinished[currentFrame] };
 
-    VkSubmitInfo submitInfo{};
-    submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-    submitInfo.commandBufferCount = 1;
-    submitInfo.pCommandBuffers = &commandBuffersDraw[imageIndex];
-    submitInfo.waitSemaphoreCount = 1;
-    submitInfo.pWaitSemaphores = waitSemaphores;
-    submitInfo.pWaitDstStageMask = waitStages;
-    submitInfo.signalSemaphoreCount = 1;
-    submitInfo.pSignalSemaphores = signalSemaphores;
+        VkSubmitInfo submitInfo{};
+        submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+        submitInfo.commandBufferCount = 1;
+        submitInfo.pCommandBuffers = &commandBuffersRender[imageIndex];
+        submitInfo.waitSemaphoreCount = 0;
+        submitInfo.signalSemaphoreCount = 1;
+        submitInfo.pSignalSemaphores = signalSemaphores;
 
-    vkResetFences(device, 1, &inFlightFences[currentFrame]);
-    VK_CHECK_RESULT(vkQueueSubmit(queues.graphics, 1, &submitInfo, inFlightFences[currentFrame]), "failed to submit render queue {}", imageIndex);
+        VK_CHECK_RESULT(vkQueueSubmit(queues.graphics, 1, &submitInfo, VK_NULL_HANDLE), "failed to submit render queue {}", imageIndex);
+    }
 
-    VkSwapchainKHR swapchains[] = { swapchain.swapchain };
-    VkPresentInfoKHR presentInfo = {};
-    presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
-    presentInfo.waitSemaphoreCount = 1;
-    presentInfo.pWaitSemaphores = signalSemaphores;
-    presentInfo.swapchainCount = 1;
-    presentInfo.pSwapchains = swapchains;
-    presentInfo.pImageIndices = &imageIndex;
+    // render imGui
+    imGuiRenderer->recordRenderCommands(imageIndex);
+    renderImGui &= imGuiRenderer->shouldRender(imageIndex);
+    if (renderImGui) {
 
-    VkResult resultPresent = vkQueuePresentKHR(queues.present, &presentInfo);
+        VkSemaphore waitSemaphores[] = { semaphoresRenderFinished[currentFrame] };
+        VkPipelineStageFlags waitStages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
+        VkSemaphore signalSemaphores[] = { semaphoresImGuiFinished[currentFrame] };
 
-    if (resultPresent == VK_ERROR_OUT_OF_DATE_KHR || resultPresent == VK_SUBOPTIMAL_KHR || framebufferResized) {
-        recreateSwapChain();
-    } else if (resultPresent != VK_SUCCESS) {
-        AID_ERROR("failed to present swap chain image!");
+        VkCommandBuffer commandBuffers[] = { imGuiRenderer->getCommandBuffer(imageIndex) };
+
+        VkSubmitInfo submitInfo{};
+        submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+        submitInfo.commandBufferCount = 1;
+        submitInfo.pCommandBuffers = commandBuffers;
+        submitInfo.waitSemaphoreCount = 1;
+        submitInfo.pWaitSemaphores = waitSemaphores;
+        submitInfo.pWaitDstStageMask = waitStages;
+        submitInfo.signalSemaphoreCount = 1;
+        submitInfo.pSignalSemaphores = signalSemaphores;
+
+        VK_CHECK_RESULT(vkQueueSubmit(queues.graphics, 1, &submitInfo, VK_NULL_HANDLE), "failed to submit render queue {}", imageIndex);
+    }
+
+    // copy render image to swapchain image
+    {
+        VkSemaphore signalSemaphores[] = { semaphoresImageCopyFinished[currentFrame] };
+        VkSemaphore waitSemaphores[2];
+        waitSemaphores[0] = semaphoresImageAvailable[currentFrame];
+        if (renderImGui) waitSemaphores[1] = semaphoresImGuiFinished[currentFrame];
+        else waitSemaphores[1] = semaphoresRenderFinished[currentFrame];
+        VkPipelineStageFlags waitStages[] = { VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT };
+
+        VkSubmitInfo submitInfo{};
+        submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+        submitInfo.commandBufferCount = 1;
+        submitInfo.pCommandBuffers = &commandBuffersImageCopy[imageIndex];
+        submitInfo.waitSemaphoreCount = 2;
+        submitInfo.pWaitSemaphores = waitSemaphores;
+        submitInfo.pWaitDstStageMask = waitStages;
+        submitInfo.signalSemaphoreCount = 1;
+        submitInfo.pSignalSemaphores = signalSemaphores;
+
+        vkResetFences(device, 1, &inFlightFences[currentFrame]);
+        VK_CHECK_RESULT(vkQueueSubmit(queues.graphics, 1, &submitInfo, inFlightFences[currentFrame]), "failed to submit render queue {}", imageIndex);
+    }
+
+    // present
+    {
+        VkSemaphore waitSemaphores[] = { semaphoresImageCopyFinished[currentFrame] };
+
+        VkSwapchainKHR swapchains[] = { swapchain.swapchain };
+        VkPresentInfoKHR presentInfo = {};
+        presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+        presentInfo.waitSemaphoreCount = 1;
+        presentInfo.pWaitSemaphores = waitSemaphores;
+        presentInfo.swapchainCount = 1;
+        presentInfo.pSwapchains = swapchains;
+        presentInfo.pImageIndices = &imageIndex;
+
+        VkResult resultPresent = vkQueuePresentKHR(queues.present, &presentInfo);
+
+        if (resultPresent == VK_ERROR_OUT_OF_DATE_KHR || resultPresent == VK_SUBOPTIMAL_KHR || framebufferResized) {
+            recreateSwapChain();
+        } else if (resultPresent != VK_SUCCESS) {
+            AID_ERROR("failed to present swap chain image!");
+        }
     }
 
     currentFrame = (currentFrame + 1) % _MAX_FRAMES_IN_FLIGHT;
@@ -871,7 +950,7 @@ void Renderer::recreateSwapChain() {
     createImageViews();
     createRenderImage();
     createDescriptorSets();
-    createCommandBuffers();
+    createCommandBuffersRender();
 }
 
 VKAPI_ATTR VkBool32 VKAPI_CALL Renderer::debugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity, VkDebugUtilsMessageTypeFlagsEXT messageType,
@@ -919,18 +998,18 @@ void Renderer::cleanUp() {
     cleanupSwapChain();
 
     for (size_t i = 0; i < _MAX_FRAMES_IN_FLIGHT; i++) {
-        vkDestroySemaphore(device, renderFinishedSemaphores[i], VK_ALLOCATOR);
-        vkDestroySemaphore(device, imageAvailableSemaphores[i], VK_ALLOCATOR);
+        vkDestroySemaphore(device, semaphoresImageAvailable[i], VK_ALLOCATOR);
+        vkDestroySemaphore(device, semaphoresRenderFinished[i], VK_ALLOCATOR);
+        vkDestroySemaphore(device, semaphoresImGuiFinished[i], VK_ALLOCATOR);
+        vkDestroySemaphore(device, semaphoresImageCopyFinished[i], VK_ALLOCATOR);
         vkDestroyFence(device, inFlightFences[i], VK_ALLOCATOR);
     }
-
     vkDestroyCommandPool(device, commandPool, VK_ALLOCATOR);
 
     vkDestroyDevice(device, VK_ALLOCATOR);
 
-    if (enableValidationLayers) {
+    if (enableValidationLayers)
         destroyDebugUtilsMessengerEXT(instance, debugMessenger, VK_ALLOCATOR);
-    }
 
     vkDestroySurfaceKHR(instance, surface, VK_ALLOCATOR);
     vkDestroyInstance(instance, VK_ALLOCATOR);
@@ -939,12 +1018,10 @@ void Renderer::cleanUp() {
 void Renderer::cleanupSwapChain() {
     for (auto imageView : swapchain.imageViews) vkDestroyImageView(device, imageView, VK_ALLOCATOR);
     vkDestroySwapchainKHR(device, swapchain.swapchain, VK_ALLOCATOR);
-    vkFreeCommandBuffers(device, commandPool, static_cast<uint32_t>(commandBuffersDraw.size()), commandBuffersDraw.data());
+    vkFreeCommandBuffers(device, commandPool, static_cast<uint32_t>(commandBuffersRender.size()), commandBuffersRender.data());
     vkDestroyDescriptorPool(device, descriptorPool, VK_ALLOCATOR);
 
-    vkFreeMemory(device, renderImage.memory, VK_ALLOCATOR);
-    vkDestroyImageView(device, renderImage.view, VK_ALLOCATOR);
-    vkDestroyImage(device, renderImage.image, VK_ALLOCATOR);
+    renderImage.destroy(device);
 }
 
 // HELPER FUNCTIONS
@@ -1000,49 +1077,17 @@ void Renderer::testDebugMessenger() {
 }
 
 bool Renderer::isDeviceSuitable(VkPhysicalDevice device) {
-    QueueFamilyIndices indices = findQueueFamilies(device);
+    Vk::QueueFamilyIndices indices = Vk::findQueueFamilies(device, surface);
 
     bool extensionsSupported = checkDeviceExtensionSupport(device);
 
     bool swapChainAdequate = false;
     if (extensionsSupported) {
-        SwapChainSupportDetails swapChainSupport = querySwapChainSupport(device);
+        Vk::SwapChainSupportDetails swapChainSupport = Vk::querySwapChainSupport(device, surface);
         swapChainAdequate = !swapChainSupport.formats.empty() && !swapChainSupport.presentModes.empty();
     }
 
     return indices.isComplete() && extensionsSupported && swapChainAdequate;
-}
-
-Renderer::QueueFamilyIndices Renderer::findQueueFamilies(VkPhysicalDevice device) {
-    QueueFamilyIndices indices;
-
-    uint32_t queueFamilyCount = 0;
-    vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, nullptr);
-
-    std::vector<VkQueueFamilyProperties> queueFamilies(queueFamilyCount);
-    vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, queueFamilies.data());
-
-    int i = 0;
-    for (const auto& queueFamily : queueFamilies) {
-        if (queueFamily.queueFlags & VK_QUEUE_GRAPHICS_BIT) {
-            indices.graphicsFamily = i;
-        }
-
-        VkBool32 presentSupport = false;
-        vkGetPhysicalDeviceSurfaceSupportKHR(device, i, surface, &presentSupport);
-
-        if (presentSupport) {
-            indices.presentFamily = i;
-        }
-
-        if (indices.isComplete()) {
-            break;
-        }
-
-        i++;
-    }
-
-    return indices;
 }
 
 bool Renderer::checkDeviceExtensionSupport(VkPhysicalDevice device) {
@@ -1059,30 +1104,6 @@ bool Renderer::checkDeviceExtensionSupport(VkPhysicalDevice device) {
     }
 
     return requiredExtensions.empty();
-}
-
-Renderer::SwapChainSupportDetails Renderer::querySwapChainSupport(VkPhysicalDevice device) {
-    SwapChainSupportDetails details;
-
-    vkGetPhysicalDeviceSurfaceCapabilitiesKHR(device, surface, &details.capabilities);
-
-    uint32_t formatCount;
-    vkGetPhysicalDeviceSurfaceFormatsKHR(device, surface, &formatCount, nullptr);
-
-    if (formatCount != 0) {
-        details.formats.resize(formatCount);
-        vkGetPhysicalDeviceSurfaceFormatsKHR(device, surface, &formatCount, details.formats.data());
-    }
-
-    uint32_t presentModeCount;
-    vkGetPhysicalDeviceSurfacePresentModesKHR(device, surface, &presentModeCount, nullptr);
-
-    if (presentModeCount != 0) {
-        details.presentModes.resize(presentModeCount);
-        vkGetPhysicalDeviceSurfacePresentModesKHR(device, surface, &presentModeCount, details.presentModes.data());
-    }
-
-    return details;
 }
 
 std::vector<const char*> Renderer::getRequiredExtensions() {
@@ -1133,90 +1154,6 @@ VkExtent2D Renderer::chooseSwapExtent(const VkSurfaceCapabilitiesKHR& capabiliti
 
         return actualExtent;
     }
-}
-
-std::vector<char> Renderer::readFile(const std::string filename) {
-    std::ifstream file(filename, std::ios::ate | std::ios::binary);
-
-    if (!file.is_open()) {
-        AID_ERROR("failed to open file: " + filename);
-    }
-
-    size_t fileSize = (size_t)file.tellg();
-    std::vector<char> buffer(fileSize);
-
-    file.seekg(0);
-    file.read(buffer.data(), fileSize);
-
-    file.close();
-
-    return buffer;
-}
-
-VkShaderModule Renderer::createShaderModule(const std::vector<char>& code) {
-    VkShaderModuleCreateInfo createInfo = {};
-    createInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
-    createInfo.codeSize = code.size();
-    createInfo.pCode = reinterpret_cast<const uint32_t*>(code.data());
-
-    VkShaderModule shaderModule;
-    if (vkCreateShaderModule(device, &createInfo, nullptr, &shaderModule) != VK_SUCCESS) {
-        AID_ERROR("failed to create shader module!");
-    }
-
-    shaderModules.push_back(shaderModule);
-    return shaderModule;
-}
-
-VkPipelineShaderStageCreateInfo Renderer::loadShader(const std::string filename, VkShaderStageFlagBits stage) {
-    auto shaderCode = readFile(filename);
-    VkShaderModule shaderModule = createShaderModule(shaderCode);
-
-    VkPipelineShaderStageCreateInfo shaderStageInfo = {};
-    shaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-    shaderStageInfo.stage = stage;
-    shaderStageInfo.module = shaderModule;
-    shaderStageInfo.pName = "main";
-    return shaderStageInfo;
-}
-
-VkCommandBuffer Renderer::beginSingleTimeCommands() {
-    VkCommandBufferAllocateInfo allocInfo = {};
-    allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-    allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-    allocInfo.commandPool = commandPool;
-    allocInfo.commandBufferCount = 1;
-
-    VkCommandBuffer commandBuffer;
-    VK_CHECK_RESULT(vkAllocateCommandBuffers(device, &allocInfo, &commandBuffer), "failed to allocate single time commmand buffer");
-
-    VkCommandBufferBeginInfo beginInfo = {};
-    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-    beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-
-    vkBeginCommandBuffer(commandBuffer, &beginInfo);
-
-    return commandBuffer;
-}
-
-void Renderer::endSingleTimeCommands(VkCommandBuffer commandBuffer) {
-    vkEndCommandBuffer(commandBuffer);
-
-    VkSubmitInfo submitInfo = {};
-    submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-    submitInfo.commandBufferCount = 1;
-    submitInfo.pCommandBuffers = &commandBuffer;
-
-    VkFenceCreateInfo fenceInfo{};
-    fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
-    VkFence fence;
-    VK_CHECK_RESULT(vkCreateFence(device, &fenceInfo, nullptr, &fence), "failed to create endSingleTimeCommands() fence");
-
-    VK_CHECK_RESULT(vkQueueSubmit(queues.graphics, 1, &submitInfo, fence), "failed to submit single time command buffer");
-    VK_CHECK_RESULT(vkWaitForFences(device, 1, &fence, VK_TRUE, DEFAULT_FENCE_TIMEOUT), "single time command buffer submit fence wait failed");
-
-    vkDestroyFence(device, fence, nullptr);
-    vkFreeCommandBuffers(device, commandPool, 1, &commandBuffer);
 }
 
 void Renderer::recordImageLayoutTransition(VkCommandBuffer& commandBuffer, VkImage image, VkImageLayout oldImageLayout, VkImageLayout newImageLayout,
@@ -1351,7 +1288,7 @@ void Renderer::recordImageLayoutTransition(VkCommandBuffer& commandBuffer, VkIma
         1, &imageMemoryBarrier);
 }
 
-void Renderer::createBuffer(Buffer& buffer, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkDeviceSize size) {
+void Renderer::createBuffer(Vk::Buffer& buffer, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkDeviceSize size) {
     VkBufferCreateInfo bufferInfo = {};
     bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
     bufferInfo.size = size;
@@ -1366,7 +1303,7 @@ void Renderer::createBuffer(Buffer& buffer, VkBufferUsageFlags usage, VkMemoryPr
     VkMemoryAllocateInfo allocInfo = {};
     allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
     allocInfo.allocationSize = memRequirements.size;
-    allocInfo.memoryTypeIndex = findMemoryType(memRequirements.memoryTypeBits, properties);
+    allocInfo.memoryTypeIndex = Vk::findMemoryType(physicalDevice, memRequirements.memoryTypeBits, properties);
 
     VK_CHECK_RESULT(vkAllocateMemory(device, &allocInfo, VK_ALLOCATOR, &buffer.memory), "failed to allocate buffer memory!");
 
@@ -1374,8 +1311,8 @@ void Renderer::createBuffer(Buffer& buffer, VkBufferUsageFlags usage, VkMemoryPr
     buffer.size = size;
 }
 
-void Renderer::uploadBufferDeviceLocal(Buffer& buffer, void* data, VkDeviceSize size, VkDeviceSize bufferOffset) {
-    Buffer stagingBuffer;
+void Renderer::uploadBufferDeviceLocal(Vk::Buffer& buffer, void* data, VkDeviceSize size, VkDeviceSize bufferOffset) {
+    Vk::Buffer stagingBuffer;
     createBuffer(stagingBuffer, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT, size);
     uploadBufferHostVisible(stagingBuffer, data, size, 0);
 
@@ -1384,36 +1321,23 @@ void Renderer::uploadBufferDeviceLocal(Buffer& buffer, void* data, VkDeviceSize 
     copyRegion.srcOffset = 0;
     copyRegion.dstOffset = bufferOffset;
 
-    VkCommandBuffer commandBuffer = beginSingleTimeCommands();
+    VkCommandBuffer commandBuffer = Vk::beginSingleTimeCommands(device, commandPool);
     vkCmdCopyBuffer(commandBuffer, stagingBuffer.buffer, buffer.buffer, 1, &copyRegion);
-    endSingleTimeCommands(commandBuffer);
+    Vk::endSingleTimeCommands(device, commandBuffer, queues.graphics, commandPool);
 
     destroyBuffer(stagingBuffer);
 }
 
-void Renderer::uploadBufferHostVisible(Buffer& buffer, void* data, VkDeviceSize size, VkDeviceSize bufferOffset) {
+void Renderer::uploadBufferHostVisible(Vk::Buffer& buffer, void* data, VkDeviceSize size, VkDeviceSize bufferOffset) {
     void* dataDst;
     VK_CHECK_RESULT(vkMapMemory(device, buffer.memory, bufferOffset, size, 0, &dataDst), "failed to map buffer memory");
     memcpy(dataDst, data, (size_t)size);
     vkUnmapMemory(device, buffer.memory);
 }
 
-void Renderer::destroyBuffer(Buffer& buffer) {
+void Renderer::destroyBuffer(Vk::Buffer& buffer) {
     vkDestroyBuffer(device, buffer.buffer, VK_ALLOCATOR);
     vkFreeMemory(device, buffer.memory, VK_ALLOCATOR);
-}
-
-uint32_t Renderer::findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties) {
-    VkPhysicalDeviceMemoryProperties memProperties;
-    vkGetPhysicalDeviceMemoryProperties(physicalDevice, &memProperties);
-
-    for (uint32_t i = 0; i < memProperties.memoryTypeCount; i++) {
-        if ((typeFilter & (1 << i)) && (memProperties.memoryTypes[i].propertyFlags & properties) == properties) {
-            return i;
-        }
-    }
-
-    AID_ERROR("failed to find suitable memory type!");
 }
 
 VkDeviceSize Renderer::getUBOOffsetAligned(VkDeviceSize stride) {
