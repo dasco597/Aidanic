@@ -51,6 +51,6 @@ private:
     void createPipeline();
     void createCommandBuffers();
 
-    void setupRenderState(VkCommandBuffer& commandBuffer, PerFrame& perFrameResources, int fb_width, int fb_height, ImDrawData* draw_data);
+    void setupRenderState(VkCommandBuffer commandBuffer, PerFrame& perFrameResources, int fb_width, int fb_height, ImDrawData* draw_data);
     void recreateBuffer(Vk::Buffer& buffer, VkDeviceSize newSize, VkBufferUsageFlags usage);
 };

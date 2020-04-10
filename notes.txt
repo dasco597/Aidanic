@@ -3,3 +3,16 @@ todo:
 unlocked mouse control scheme
 imgui for fov control - don't plan (remember the bible verse!) try stick with ioInterface/Renderer setup (imgui in ioInterface) and see if it works!
 sdf with intersection shader or some shit
+
+width, height
+render-image view, format
+numimages
+device
+physicaldevice
+queues.graphics
+commandPool
+surface
+
+createBuffer
+uploadBufferHostVisible
+destroyBuffer

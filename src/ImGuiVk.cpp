@@ -7,7 +7,7 @@
 
 void ImGuiVk::init(Renderer* renderer) {
     this->renderer = renderer;
-    perFrameResources.resize(renderer->swapchain.numImages);
+    perFrameResources.resize(renderer->getNumSwapchainImages());
     
     createFontTexture();
     createDescriptorSets();
@@ -19,7 +19,7 @@ void ImGuiVk::init(Renderer* renderer) {
 
 void ImGuiVk::createFramebuffer() {
     VkImageView attachments[] = {
-        renderer->renderImage.view
+        renderer->getRenderImage().view
     };
 
     VkFramebufferCreateInfo framebufferInfo = {};
@@ -27,11 +27,11 @@ void ImGuiVk::createFramebuffer() {
     framebufferInfo.renderPass = renderpass;
     framebufferInfo.attachmentCount = 1;
     framebufferInfo.pAttachments = attachments;
-    framebufferInfo.width = renderer->renderImage.extent.width;
-    framebufferInfo.height = renderer->renderImage.extent.height;
+    framebufferInfo.width = renderer->getRenderImage().extent.width;
+    framebufferInfo.height = renderer->getRenderImage().extent.height;
     framebufferInfo.layers = 1;
 
-    VK_CHECK_RESULT(vkCreateFramebuffer(renderer->device, &framebufferInfo, nullptr, &framebuffer), "failed to create imgui framebuffer");
+    VK_CHECK_RESULT(vkCreateFramebuffer(renderer->getDevice(), &framebufferInfo, nullptr, &framebuffer), "failed to create imgui framebuffer");
 }
 
 void ImGuiVk::createFontTexture() {
@@ -61,16 +61,16 @@ void ImGuiVk::createFontTexture() {
         imageInfo.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
         imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
         imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-        VK_CHECK_RESULT(vkCreateImage(renderer->device, &imageInfo, VK_ALLOCATOR, &fontTexture.image), "failed to create imgui font image");
+        VK_CHECK_RESULT(vkCreateImage(renderer->getDevice(), &imageInfo, VK_ALLOCATOR, &fontTexture.image), "failed to create imgui font image");
 
         VkMemoryRequirements req;
-        vkGetImageMemoryRequirements(renderer->device, fontTexture.image, &req);
+        vkGetImageMemoryRequirements(renderer->getDevice(), fontTexture.image, &req);
         VkMemoryAllocateInfo allocInfo = {};
         allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
         allocInfo.allocationSize = req.size;
-        allocInfo.memoryTypeIndex = Vk::findMemoryType(renderer->physicalDevice, req.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-        VK_CHECK_RESULT(vkAllocateMemory(renderer->device, &allocInfo, VK_ALLOCATOR, &fontTexture.memory), "failed to allocate imgui font texture memory");
-        VK_CHECK_RESULT(vkBindImageMemory(renderer->device, fontTexture.image, fontTexture.memory, 0), "failed to bind imgui font image memory");
+        allocInfo.memoryTypeIndex = Vk::findMemoryType(renderer->getPhysicalDevice(), req.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+        VK_CHECK_RESULT(vkAllocateMemory(renderer->getDevice(), &allocInfo, VK_ALLOCATOR, &fontTexture.memory), "failed to allocate imgui font texture memory");
+        VK_CHECK_RESULT(vkBindImageMemory(renderer->getDevice(), fontTexture.image, fontTexture.memory, 0), "failed to bind imgui font image memory");
     }
 
     // create image view
@@ -83,7 +83,7 @@ void ImGuiVk::createFontTexture() {
         info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
         info.subresourceRange.levelCount = 1;
         info.subresourceRange.layerCount = 1;
-        VK_CHECK_RESULT(vkCreateImageView(renderer->device, &info, VK_ALLOCATOR, &fontTexture.view), "failed to create imgui font imageview");
+        VK_CHECK_RESULT(vkCreateImageView(renderer->getDevice(), &info, VK_ALLOCATOR, &fontTexture.view), "failed to create imgui font imageview");
     }
 
     // upload pixel data
@@ -124,13 +124,13 @@ void ImGuiVk::createFontTexture() {
         useBarrier[0].subresourceRange.levelCount = 1;
         useBarrier[0].subresourceRange.layerCount = 1;
 
-        VkCommandBuffer commandBuffer = Vk::beginSingleTimeCommands(renderer->device, renderer->commandPool);
+        VkCommandBuffer commandBuffer = Vk::beginSingleTimeCommands(renderer->getDevice(), renderer->getCommandPool());
 
         vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_HOST_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, NULL, 0, NULL, 1, copyBarrier);
         vkCmdCopyBufferToImage(commandBuffer, uploadBuffer.buffer, fontTexture.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
         vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, NULL, 0, NULL, 1, useBarrier);
 
-        Vk::endSingleTimeCommands(renderer->device, commandBuffer, renderer->queues.graphics, renderer->commandPool);
+        Vk::endSingleTimeCommands(renderer->getDevice(), commandBuffer, renderer->getGraphicsQueue(), renderer->getCommandPool());
 
         renderer->destroyBuffer(uploadBuffer);
     }
@@ -152,7 +152,7 @@ void ImGuiVk::createFontTexture() {
         info.minLod = -1000;
         info.maxLod = 1000;
         info.maxAnisotropy = 1.0f;
-        vkCreateSampler(renderer->device, &info, VK_ALLOCATOR, &fontSampler);
+        vkCreateSampler(renderer->getDevice(), &info, VK_ALLOCATOR, &fontSampler);
     }
 }
 
@@ -168,7 +168,7 @@ void ImGuiVk::createDescriptorSets() {
         descriptorPoolCI.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
         descriptorPoolCI.pPoolSizes = poolSizes.data();
         descriptorPoolCI.maxSets = 1;
-        VK_CHECK_RESULT(vkCreateDescriptorPool(renderer->device, &descriptorPoolCI, VK_ALLOCATOR, &descriptorPool), "failed to create descriptor pool");
+        VK_CHECK_RESULT(vkCreateDescriptorPool(renderer->getDevice(), &descriptorPoolCI, VK_ALLOCATOR, &descriptorPool), "failed to create descriptor pool");
     }
 
     // create descriptor set layout
@@ -183,7 +183,7 @@ void ImGuiVk::createDescriptorSets() {
         info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
         info.bindingCount = 1;
         info.pBindings = binding;
-        VK_CHECK_RESULT(vkCreateDescriptorSetLayout(renderer->device, &info, VK_ALLOCATOR, &descriptorSetLayout), "failed to create imgui descriptor set layout");
+        VK_CHECK_RESULT(vkCreateDescriptorSetLayout(renderer->getDevice(), &info, VK_ALLOCATOR, &descriptorSetLayout), "failed to create imgui descriptor set layout");
     }
 
     // create descriptor set
@@ -193,7 +193,7 @@ void ImGuiVk::createDescriptorSets() {
         alloc_info.descriptorPool = descriptorPool;
         alloc_info.descriptorSetCount = 1;
         alloc_info.pSetLayouts = &descriptorSetLayout;
-        VK_CHECK_RESULT(vkAllocateDescriptorSets(renderer->device, &alloc_info, &descriptorSet), "failed to allocate imgui descriptor set");
+        VK_CHECK_RESULT(vkAllocateDescriptorSets(renderer->getDevice(), &alloc_info, &descriptorSet), "failed to allocate imgui descriptor set");
     }
 
     // update descriptor set
@@ -208,13 +208,13 @@ void ImGuiVk::createDescriptorSets() {
         write_desc[0].descriptorCount = 1;
         write_desc[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         write_desc[0].pImageInfo = desc_image;
-        vkUpdateDescriptorSets(renderer->device, 1, write_desc, 0, NULL);
+        vkUpdateDescriptorSets(renderer->getDevice(), 1, write_desc, 0, NULL);
     }
 }
 
 void ImGuiVk::createRenderPass() {
     VkAttachmentDescription colorAttachment = {};
-    colorAttachment.format = renderer->renderImage.format;
+    colorAttachment.format = renderer->getRenderImage().format;
     colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
     colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
     colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
@@ -249,7 +249,7 @@ void ImGuiVk::createRenderPass() {
     renderPassInfo.dependencyCount = 1;
     renderPassInfo.pDependencies = &dependency;
 
-    VK_CHECK_RESULT(vkCreateRenderPass(renderer->device, &renderPassInfo, nullptr, &renderpass), "failed to create render pass");
+    VK_CHECK_RESULT(vkCreateRenderPass(renderer->getDevice(), &renderPassInfo, nullptr, &renderpass), "failed to create render pass");
 }
 
 void ImGuiVk::createPipeline() {
@@ -268,15 +268,15 @@ void ImGuiVk::createPipeline() {
     pipelineLayoutInfo.pushConstantRangeCount = 1;
     pipelineLayoutInfo.pPushConstantRanges = pushConstantRanges;
 
-    VK_CHECK_RESULT(vkCreatePipelineLayout(renderer->device, &pipelineLayoutInfo, nullptr, &pipelineLayout), "failed to create imgui pipeline layout");
+    VK_CHECK_RESULT(vkCreatePipelineLayout(renderer->getDevice(), &pipelineLayoutInfo, nullptr, &pipelineLayout), "failed to create imgui pipeline layout");
 
     // pipeline
 
     auto vertShaderCode = Vk::readFile(_CONFIG::getAssetsPath() + std::string(SHADER_SRC_IMGUI_VERT));
     auto fragShaderCode = Vk::readFile(_CONFIG::getAssetsPath() + std::string(SHADER_SRC_IMGUI_FRAG));
 
-    VkShaderModule vertShaderModule = Vk::createShaderModule(renderer->device, vertShaderCode);
-    VkShaderModule fragShaderModule = Vk::createShaderModule(renderer->device, fragShaderCode);
+    VkShaderModule vertShaderModule = Vk::createShaderModule(renderer->getDevice(), vertShaderCode);
+    VkShaderModule fragShaderModule = Vk::createShaderModule(renderer->getDevice(), fragShaderCode);
 
     VkPipelineShaderStageCreateInfo vertShaderStageInfo = {};
     vertShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
@@ -385,23 +385,23 @@ void ImGuiVk::createPipeline() {
     pipelineInfo.subpass = 0;
     pipelineInfo.basePipelineHandle = VK_NULL_HANDLE;
 
-    VK_CHECK_RESULT(vkCreateGraphicsPipelines(renderer->device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &pipeline), "failed to create imgui pipeline");
+    VK_CHECK_RESULT(vkCreateGraphicsPipelines(renderer->getDevice(), VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &pipeline), "failed to create imgui pipeline");
 
-    vkDestroyShaderModule(renderer->device, fragShaderModule, nullptr);
-    vkDestroyShaderModule(renderer->device, vertShaderModule, nullptr);
+    vkDestroyShaderModule(renderer->getDevice(), fragShaderModule, nullptr);
+    vkDestroyShaderModule(renderer->getDevice(), vertShaderModule, nullptr);
 }
 
 void ImGuiVk::createCommandBuffers() {
     // command pool
 
-    Vk::QueueFamilyIndices queueFamilyIndices = Vk::findQueueFamilies(renderer->physicalDevice, renderer->surface);
+    Vk::QueueFamilyIndices queueFamilyIndices = Vk::findQueueFamilies(renderer->getPhysicalDevice(), renderer->getSurface());
 
     VkCommandPoolCreateInfo poolInfo = {};
     poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
     poolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
     poolInfo.queueFamilyIndex = queueFamilyIndices.graphicsFamily.value();
 
-    VK_CHECK_RESULT(vkCreateCommandPool(renderer->device, &poolInfo, nullptr, &commandPool), "failed to create graphics command pool!");
+    VK_CHECK_RESULT(vkCreateCommandPool(renderer->getDevice(), &poolInfo, nullptr, &commandPool), "failed to create graphics command pool!");
 
     // command buffers
 
@@ -410,8 +410,8 @@ void ImGuiVk::createCommandBuffers() {
     info.commandPool = commandPool;
     info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
     info.commandBufferCount = 1;
-    for (int i = 0; i < renderer->swapchain.numImages; i++)
-        VK_CHECK_RESULT(vkAllocateCommandBuffers(renderer->device, &info, &perFrameResources[i].commandBuffer), "failed to allocate imgui command buffer");
+    for (int i = 0; i < renderer->getNumSwapchainImages(); i++)
+        VK_CHECK_RESULT(vkAllocateCommandBuffers(renderer->getDevice(), &info, &perFrameResources[i].commandBuffer), "failed to allocate imgui command buffer");
 
     // render image barrier
 
@@ -425,7 +425,7 @@ void ImGuiVk::createCommandBuffers() {
     renderImageBarrierGeneral.newLayout = VK_IMAGE_LAYOUT_GENERAL;
     renderImageBarrierGeneral.srcQueueFamilyIndex = 0;
     renderImageBarrierGeneral.dstQueueFamilyIndex = 0;
-    renderImageBarrierGeneral.image = renderer->renderImage.image;
+    renderImageBarrierGeneral.image = renderer->getRenderImage().image;
     renderImageBarrierGeneral.subresourceRange = imageSubresourceRange;
 }
 
@@ -458,8 +458,8 @@ void ImGuiVk::recordRenderCommands(uint32_t swapchainIndex) {
     {
         ImDrawVert* vtx_dst;
         ImDrawIdx* idx_dst;
-        VK_CHECK_RESULT(vkMapMemory(renderer->device, frameResources.vertexBuffer.memory, 0, vertex_size, 0, (void**)(&vtx_dst)), "failed to map imgui vertex buffer memory");
-        VK_CHECK_RESULT(vkMapMemory(renderer->device, frameResources.indexBuffer.memory, 0, index_size, 0, (void**)(&idx_dst)), "failed to map imgui index buffer memory");
+        VK_CHECK_RESULT(vkMapMemory(renderer->getDevice(), frameResources.vertexBuffer.memory, 0, vertex_size, 0, (void**)(&vtx_dst)), "failed to map imgui vertex buffer memory");
+        VK_CHECK_RESULT(vkMapMemory(renderer->getDevice(), frameResources.indexBuffer.memory, 0, index_size, 0, (void**)(&idx_dst)), "failed to map imgui index buffer memory");
 
         for (int n = 0; n < draw_data->CmdListsCount; n++) {
             const ImDrawList* cmd_list = draw_data->CmdLists[n];
@@ -475,10 +475,10 @@ void ImGuiVk::recordRenderCommands(uint32_t swapchainIndex) {
         range[1].sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE;
         range[1].memory = frameResources.indexBuffer.memory;
         range[1].size = VK_WHOLE_SIZE;
-        VK_CHECK_RESULT(vkFlushMappedMemoryRanges(renderer->device, 2, range), "failed to flush imgui vertex and index memory");
+        VK_CHECK_RESULT(vkFlushMappedMemoryRanges(renderer->getDevice(), 2, range), "failed to flush imgui vertex and index memory");
 
-        vkUnmapMemory(renderer->device, frameResources.vertexBuffer.memory);
-        vkUnmapMemory(renderer->device, frameResources.indexBuffer.memory);
+        vkUnmapMemory(renderer->getDevice(), frameResources.vertexBuffer.memory);
+        vkUnmapMemory(renderer->getDevice(), frameResources.indexBuffer.memory);
     }
 
     // Will project scissor/clipping rectangles into framebuffer space
@@ -544,12 +544,12 @@ void ImGuiVk::recordRenderCommands(uint32_t swapchainIndex) {
     frameResources.render = true;
 }
 
-void ImGuiVk::setupRenderState(VkCommandBuffer& commandBuffer, PerFrame& perFrameResources, int fb_width, int fb_height, ImDrawData* draw_data) {
+void ImGuiVk::setupRenderState(VkCommandBuffer commandBuffer, PerFrame& perFrameResources, int fb_width, int fb_height, ImDrawData* draw_data) {
     VkRenderPassBeginInfo renderPassBeginInfo = {};
     renderPassBeginInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
     renderPassBeginInfo.renderPass = renderpass;
     renderPassBeginInfo.framebuffer = framebuffer;
-    renderPassBeginInfo.renderArea.extent = renderer->renderImage.extent;
+    renderPassBeginInfo.renderArea.extent = renderer->getRenderImage().extent;
     renderPassBeginInfo.clearValueCount = 1;
     renderPassBeginInfo.pClearValues = &clearValue;
 
@@ -582,49 +582,49 @@ void ImGuiVk::setupRenderState(VkCommandBuffer& commandBuffer, PerFrame& perFram
 
 void ImGuiVk::recreateBuffer(Vk::Buffer& buffer, VkDeviceSize newSize, VkBufferUsageFlags usage) {
     if (buffer.buffer != VK_NULL_HANDLE)
-        vkDestroyBuffer(renderer->device, buffer.buffer, VK_ALLOCATOR);
+        vkDestroyBuffer(renderer->getDevice(), buffer.buffer, VK_ALLOCATOR);
     if (buffer.memory != VK_NULL_HANDLE)
-        vkFreeMemory(renderer->device, buffer.memory, VK_ALLOCATOR);
+        vkFreeMemory(renderer->getDevice(), buffer.memory, VK_ALLOCATOR);
 
     VkBufferCreateInfo buffer_info = {};
     buffer_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
     buffer_info.size = newSize;
     buffer_info.usage = usage;
     buffer_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-    VK_CHECK_RESULT(vkCreateBuffer(renderer->device, &buffer_info, VK_ALLOCATOR, &buffer.buffer), "failed to recreate imgui buffer");
+    VK_CHECK_RESULT(vkCreateBuffer(renderer->getDevice(), &buffer_info, VK_ALLOCATOR, &buffer.buffer), "failed to recreate imgui buffer");
 
     VkMemoryRequirements req;
-    vkGetBufferMemoryRequirements(renderer->device, buffer.buffer, &req);
+    vkGetBufferMemoryRequirements(renderer->getDevice(), buffer.buffer, &req);
     static VkDeviceSize g_BufferMemoryAlignment = 256;
     g_BufferMemoryAlignment = (g_BufferMemoryAlignment > req.alignment) ? g_BufferMemoryAlignment : req.alignment;
     VkMemoryAllocateInfo alloc_info = {};
     alloc_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
     alloc_info.allocationSize = req.size;
-    alloc_info.memoryTypeIndex = Vk::findMemoryType(renderer->physicalDevice, req.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT);
-    VK_CHECK_RESULT(vkAllocateMemory(renderer->device, &alloc_info, VK_ALLOCATOR, &buffer.memory), "failed to allocte buffer memory (recreateBuffer)");
+    alloc_info.memoryTypeIndex = Vk::findMemoryType(renderer->getPhysicalDevice(), req.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT);
+    VK_CHECK_RESULT(vkAllocateMemory(renderer->getDevice(), &alloc_info, VK_ALLOCATOR, &buffer.memory), "failed to allocte buffer memory (recreateBuffer)");
 
-    VK_CHECK_RESULT(vkBindBufferMemory(renderer->device, buffer.buffer, buffer.memory, 0), "failed to bind buffer memory");
+    VK_CHECK_RESULT(vkBindBufferMemory(renderer->getDevice(), buffer.buffer, buffer.memory, 0), "failed to bind buffer memory");
 }
 
 void ImGuiVk::cleanup() {
-    vkDeviceWaitIdle(renderer->device);
+    vkDeviceWaitIdle(renderer->getDevice());
 
-    vkDestroyPipeline(renderer->device, pipeline, VK_ALLOCATOR);
-    vkDestroyPipelineLayout(renderer->device, pipelineLayout, VK_ALLOCATOR);
+    vkDestroyPipeline(renderer->getDevice(), pipeline, VK_ALLOCATOR);
+    vkDestroyPipelineLayout(renderer->getDevice(), pipelineLayout, VK_ALLOCATOR);
 
-    vkDestroyRenderPass(renderer->device, renderpass, VK_ALLOCATOR);
-    vkDestroyFramebuffer(renderer->device, framebuffer, VK_ALLOCATOR);
+    vkDestroyRenderPass(renderer->getDevice(), renderpass, VK_ALLOCATOR);
+    vkDestroyFramebuffer(renderer->getDevice(), framebuffer, VK_ALLOCATOR);
 
-    fontTexture.destroy(renderer->device);
-    vkDestroySampler(renderer->device, fontSampler, VK_ALLOCATOR);
+    fontTexture.destroy(renderer->getDevice());
+    vkDestroySampler(renderer->getDevice(), fontSampler, VK_ALLOCATOR);
 
     for (int f = 0; f < perFrameResources.size(); f++) {
         renderer->destroyBuffer(perFrameResources[f].vertexBuffer);
         renderer->destroyBuffer(perFrameResources[f].indexBuffer);
     }
 
-    vkDestroyDescriptorSetLayout(renderer->device, descriptorSetLayout, VK_ALLOCATOR);
-    vkDestroyDescriptorPool(renderer->device, descriptorPool, VK_ALLOCATOR);
+    vkDestroyDescriptorSetLayout(renderer->getDevice(), descriptorSetLayout, VK_ALLOCATOR);
+    vkDestroyDescriptorPool(renderer->getDevice(), descriptorPool, VK_ALLOCATOR);
 
-    vkDestroyCommandPool(renderer->device, commandPool, VK_ALLOCATOR);
+    vkDestroyCommandPool(renderer->getDevice(), commandPool, VK_ALLOCATOR);
 }

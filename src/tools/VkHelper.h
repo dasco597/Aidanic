@@ -71,14 +71,14 @@ namespace Vk {
         uint64_t accelerationStructureHandle;
     };
 
-    SwapChainSupportDetails querySwapChainSupport(VkPhysicalDevice& device, VkSurfaceKHR& surface);
-    QueueFamilyIndices findQueueFamilies(VkPhysicalDevice& device, VkSurfaceKHR& surface);
-    uint32_t findMemoryType(VkPhysicalDevice& physicalDevice, uint32_t typeFilter, VkMemoryPropertyFlags properties);
+    SwapChainSupportDetails querySwapChainSupport(VkPhysicalDevice device, VkSurfaceKHR surface);
+    QueueFamilyIndices findQueueFamilies(VkPhysicalDevice device, VkSurfaceKHR surface);
+    uint32_t findMemoryType(VkPhysicalDevice physicalDevice, uint32_t typeFilter, VkMemoryPropertyFlags properties);
 
-    VkCommandBuffer beginSingleTimeCommands(VkDevice& device, VkCommandPool& commandPool);
-    void endSingleTimeCommands(VkDevice& device, VkCommandBuffer commandBuffer, VkQueue& queue, VkCommandPool& commandPool);
+    VkCommandBuffer beginSingleTimeCommands(VkDevice device, VkCommandPool commandPool);
+    void endSingleTimeCommands(VkDevice device, VkCommandBuffer commandBuffer, VkQueue queue, VkCommandPool commandPool);
 
     std::vector<char> readFile(const std::string filename);
-    VkPipelineShaderStageCreateInfo loadShader(VkDevice& device, const std::string filename, VkShaderStageFlagBits stage, VkShaderModule& shaderModuleWriteOut);
-    VkShaderModule createShaderModule(VkDevice& device, const std::vector<char>& code);
+    VkPipelineShaderStageCreateInfo loadShader(VkDevice device, const std::string filename, VkShaderStageFlagBits stage, VkShaderModule& shaderModuleWriteOut);
+    VkShaderModule createShaderModule(VkDevice device, const std::vector<char>& code);
 };

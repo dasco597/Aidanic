@@ -16,12 +16,23 @@ class Aidanic;
 class ImGuiVk;
 
 class Renderer {
-    friend ImGuiVk;
-
 public:
     void init(Aidanic* app, std::vector<const char*>& requiredExtensions, Model model, glm::mat4 viewInverse, glm::mat4 projInverse, glm::vec3 cameraPos);
     void drawFrame(bool framebufferResized, glm::mat4 viewInverse, glm::mat4 projInverse, glm::vec3 cameraPos, bool renderImGui = false, ImGuiVk* imGuiRenderer = nullptr);
     void cleanUp();
+
+    void createBuffer(Vk::Buffer& buffer, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkDeviceSize size);
+    void uploadBufferDeviceLocal(Vk::Buffer& buffer, void* data, VkDeviceSize size, VkDeviceSize bufferOffset = 0);
+    void uploadBufferHostVisible(Vk::Buffer& buffer, void* data, VkDeviceSize size, VkDeviceSize bufferOffset = 0);
+    void destroyBuffer(Vk::Buffer& buffer);
+
+    VkDevice getDevice() { return device; }
+    VkPhysicalDevice getPhysicalDevice() { return physicalDevice; }
+    VkQueue getGraphicsQueue() { return queues.graphics; }
+    VkSurfaceKHR getSurface() { return surface; }
+    VkCommandPool getCommandPool() { return commandPool; }
+    uint32_t getNumSwapchainImages() { return swapchain.numImages; }
+    Vk::StorageImage getRenderImage() { return renderImage; }
 
 private:
 #pragma region VARIABLES
@@ -141,13 +152,8 @@ private:
     VkPresentModeKHR chooseSwapPresentMode(const std::vector<VkPresentModeKHR>& availablePresentModes);
     VkExtent2D chooseSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities);
 
-    void recordImageLayoutTransition(VkCommandBuffer& commandBuffer, VkImage image, VkImageLayout oldImageLayout, VkImageLayout newImageLayout,
+    void recordImageLayoutTransition(VkCommandBuffer commandBuffer, VkImage image, VkImageLayout oldImageLayout, VkImageLayout newImageLayout,
         VkImageSubresourceRange subresourceRange, VkPipelineStageFlags srcStageMask = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VkPipelineStageFlags dstStageMask = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT);
-
-    void createBuffer(Vk::Buffer& buffer, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkDeviceSize size);
-    void uploadBufferDeviceLocal(Vk::Buffer& buffer, void* data, VkDeviceSize size, VkDeviceSize bufferOffset = 0);
-    void uploadBufferHostVisible(Vk::Buffer& buffer, void* data, VkDeviceSize size, VkDeviceSize bufferOffset = 0);
-    void destroyBuffer(Vk::Buffer& buffer);
 
     VkDeviceSize getUBOOffsetAligned(VkDeviceSize stride);
 

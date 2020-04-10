@@ -5,7 +5,7 @@
 
 using namespace Vk;
 
-SwapChainSupportDetails Vk::querySwapChainSupport(VkPhysicalDevice& device, VkSurfaceKHR& surface) {
+SwapChainSupportDetails Vk::querySwapChainSupport(VkPhysicalDevice device, VkSurfaceKHR surface) {
     Vk::SwapChainSupportDetails details;
 
     vkGetPhysicalDeviceSurfaceCapabilitiesKHR(device, surface, &details.capabilities);
@@ -29,7 +29,7 @@ SwapChainSupportDetails Vk::querySwapChainSupport(VkPhysicalDevice& device, VkSu
     return details;
 }
 
-QueueFamilyIndices Vk::findQueueFamilies(VkPhysicalDevice& device, VkSurfaceKHR& surface) {
+QueueFamilyIndices Vk::findQueueFamilies(VkPhysicalDevice device, VkSurfaceKHR surface) {
     QueueFamilyIndices indices;
 
     uint32_t queueFamilyCount = 0;
@@ -61,7 +61,7 @@ QueueFamilyIndices Vk::findQueueFamilies(VkPhysicalDevice& device, VkSurfaceKHR&
     return indices;
 }
 
-VkShaderModule Vk::createShaderModule(VkDevice& device, const std::vector<char>& code) {
+VkShaderModule Vk::createShaderModule(VkDevice device, const std::vector<char>& code) {
     VkShaderModuleCreateInfo createInfo = {};
     createInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
     createInfo.codeSize = code.size();
@@ -75,7 +75,7 @@ VkShaderModule Vk::createShaderModule(VkDevice& device, const std::vector<char>&
     return shaderModule;
 }
 
-uint32_t Vk::findMemoryType(VkPhysicalDevice& physicalDevice, uint32_t typeFilter, VkMemoryPropertyFlags properties) {
+uint32_t Vk::findMemoryType(VkPhysicalDevice physicalDevice, uint32_t typeFilter, VkMemoryPropertyFlags properties) {
     VkPhysicalDeviceMemoryProperties memProperties;
     vkGetPhysicalDeviceMemoryProperties(physicalDevice, &memProperties);
 
@@ -88,7 +88,7 @@ uint32_t Vk::findMemoryType(VkPhysicalDevice& physicalDevice, uint32_t typeFilte
     AID_ERROR("failed to find suitable memory type!");
 }
 
-VkCommandBuffer Vk::beginSingleTimeCommands(VkDevice& device, VkCommandPool& commandPool) {
+VkCommandBuffer Vk::beginSingleTimeCommands(VkDevice device, VkCommandPool commandPool) {
     VkCommandBufferAllocateInfo allocInfo = {};
     allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
     allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
@@ -107,7 +107,7 @@ VkCommandBuffer Vk::beginSingleTimeCommands(VkDevice& device, VkCommandPool& com
     return commandBuffer;
 }
 
-void Vk::endSingleTimeCommands(VkDevice& device, VkCommandBuffer commandBuffer, VkQueue& queue, VkCommandPool& commandPool) {
+void Vk::endSingleTimeCommands(VkDevice device, VkCommandBuffer commandBuffer, VkQueue queue, VkCommandPool commandPool) {
     vkEndCommandBuffer(commandBuffer);
 
     VkSubmitInfo submitInfo = {};
@@ -151,7 +151,7 @@ std::vector<char> Vk::readFile(const std::string filename) {
     return buffer;
 }
 
-VkPipelineShaderStageCreateInfo Vk::loadShader(VkDevice& device, const std::string filename, VkShaderStageFlagBits stage, VkShaderModule& shaderModuleWriteOut) {
+VkPipelineShaderStageCreateInfo Vk::loadShader(VkDevice device, const std::string filename, VkShaderStageFlagBits stage, VkShaderModule& shaderModuleWriteOut) {
     auto shaderCode = readFile(filename);
     shaderModuleWriteOut = createShaderModule(device, shaderCode);
 
