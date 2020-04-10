@@ -297,7 +297,7 @@ void ImGuiVk::createPipeline() {
 
     VkVertexInputBindingDescription bindingDescription = {};
     bindingDescription.binding = 0;
-    bindingDescription.stride = sizeof(VertexData);
+    bindingDescription.stride = sizeof(ImDrawVert);
     bindingDescription.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
 
     std::array<VkVertexInputAttributeDescription, 3> attributeDescriptions = {};
@@ -305,17 +305,17 @@ void ImGuiVk::createPipeline() {
     attributeDescriptions[0].binding = 0;
     attributeDescriptions[0].location = 0;
     attributeDescriptions[0].format = VK_FORMAT_R32G32_SFLOAT;
-    attributeDescriptions[0].offset = offsetof(VertexData, pos);
+    attributeDescriptions[0].offset = offsetof(ImDrawVert, pos);
 
     attributeDescriptions[1].binding = 0;
     attributeDescriptions[1].location = 1;
     attributeDescriptions[1].format = VK_FORMAT_R32G32_SFLOAT;
-    attributeDescriptions[1].offset = offsetof(VertexData, uv);
+    attributeDescriptions[1].offset = offsetof(ImDrawVert, uv);
 
     attributeDescriptions[2].binding = 0;
     attributeDescriptions[2].location = 2;
-    attributeDescriptions[2].format = VK_FORMAT_R32G32B32A32_SFLOAT;
-    attributeDescriptions[2].offset = offsetof(VertexData, color);
+    attributeDescriptions[2].format = VK_FORMAT_R8G8B8A8_UNORM;
+    attributeDescriptions[2].offset = offsetof(ImDrawVert, col);
 
     vertexInputInfo.vertexBindingDescriptionCount = 1;
     vertexInputInfo.vertexAttributeDescriptionCount = static_cast<uint32_t>(attributeDescriptions.size());
@@ -325,7 +325,6 @@ void ImGuiVk::createPipeline() {
     VkPipelineInputAssemblyStateCreateInfo inputAssembly = {};
     inputAssembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
     inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
-    inputAssembly.primitiveRestartEnable = VK_FALSE;
 
     VkPipelineViewportStateCreateInfo viewportState = {};
     viewportState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
@@ -334,13 +333,10 @@ void ImGuiVk::createPipeline() {
 
     VkPipelineRasterizationStateCreateInfo rasterizer = {};
     rasterizer.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
-    rasterizer.depthClampEnable = VK_FALSE;
-    rasterizer.rasterizerDiscardEnable = VK_FALSE;
     rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
-    rasterizer.lineWidth = 1.0f;
-    rasterizer.cullMode = VK_CULL_MODE_BACK_BIT;
+    rasterizer.cullMode = VK_CULL_MODE_NONE;
     rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
-    rasterizer.depthBiasEnable = VK_FALSE;
+    rasterizer.lineWidth = 1.0f;
 
     VkPipelineMultisampleStateCreateInfo multisampling = {};
     multisampling.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
@@ -356,6 +352,9 @@ void ImGuiVk::createPipeline() {
     colorBlendAttachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
     colorBlendAttachment.alphaBlendOp = VK_BLEND_OP_ADD;
     colorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+
+    VkPipelineDepthStencilStateCreateInfo depthInfo = {};
+    depthInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
 
     VkPipelineColorBlendStateCreateInfo colorBlending = {};
     colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
@@ -378,6 +377,7 @@ void ImGuiVk::createPipeline() {
     pipelineInfo.pViewportState = &viewportState;
     pipelineInfo.pRasterizationState = &rasterizer;
     pipelineInfo.pMultisampleState = &multisampling;
+    pipelineInfo.pDepthStencilState = &depthInfo;
     pipelineInfo.pColorBlendState = &colorBlending;
     pipelineInfo.pDynamicState = &dynamicState;
     pipelineInfo.layout = pipelineLayout;

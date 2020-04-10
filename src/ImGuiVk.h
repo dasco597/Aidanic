@@ -31,12 +31,6 @@ private:
     Vk::StorageImage fontTexture;
     VkSampler fontSampler;
 
-    struct VertexData {
-        glm::vec2 pos;
-        glm::vec2 uv;
-        glm::vec4 color;
-    };
-
     VkCommandPool commandPool;
     struct PerFrame {
         Vk::Buffer vertexBuffer, indexBuffer;
