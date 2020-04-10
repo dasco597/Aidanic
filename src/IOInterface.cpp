@@ -29,7 +29,11 @@ void IOInterface::init(Aidanic* application, std::vector<const char*>& requiredE
     glfwSetWindowUserPointer(window, this);
     glfwSetFramebufferSizeCallback(window, this->windowResizeCallback);
 
-    glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+    switch (controlScheme) {
+    case CONTROL_SCHEME::EDITOR: glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL); break;
+    case CONTROL_SCHEME::GAMEPLAY: glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED); break;
+    default: glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+    }
     glfwGetCursorPos(window, &mousePosPrev[0], &mousePosPrev[1]);
 
     uint32_t glfwExtensionCount = 0;
@@ -70,8 +74,10 @@ void IOInterface::minimizeSuspend() {
 }
 
 void IOInterface::pollEvents() {
+    ImGuiIO& io = ImGui::GetIO();
+
     glfwPollEvents();
-    mouseLeftClickDown = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_1);
+    mouseLeftClickDown = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_1) && !io.MouseDownOwned[GLFW_MOUSE_BUTTON_1];
 
     // update control scheme
     if (glfwGetKey(window, keyBindingsInternal[INPUTS_INTERNAL::GAMEPLAY_MODE]) == GLFW_PRESS) {
@@ -114,13 +120,10 @@ void IOInterface::updateImGui() {
     const ImVec2 mouse_pos_backup = io.MousePos;
     io.MousePos = ImVec2(-FLT_MAX, -FLT_MAX);
     const bool focused = glfwGetWindowAttrib(window, GLFW_FOCUSED) != 0;
-    if (focused)
-    {
-        if (io.WantSetMousePos)
-        {
+    if (focused) {
+        if (io.WantSetMousePos) {
             glfwSetCursorPos(window, (double)mouse_pos_backup.x, (double)mouse_pos_backup.y);
-        } else
-        {
+        } else {
             double mouse_x, mouse_y;
             glfwGetCursorPos(window, &mouse_x, &mouse_y);
             io.MousePos = ImVec2((float)mouse_x, (float)mouse_y);
@@ -207,6 +210,6 @@ void IOInterface::setKeyBindings() {
     keyBindings[GLFW_KEY_Z]             = INPUTS::INTERACTL;
     keyBindings[GLFW_KEY_X]             = INPUTS::INTERACTR;
 
-    keyBindingsInternal[INPUTS_INTERNAL::GAMEPLAY_MODE] = GLFW_KEY_1;
-    keyBindingsInternal[INPUTS_INTERNAL::EDITOR_MODE]   = GLFW_KEY_2;
+    keyBindingsInternal[INPUTS_INTERNAL::EDITOR_MODE]   = GLFW_KEY_1;
+    keyBindingsInternal[INPUTS_INTERNAL::GAMEPLAY_MODE] = GLFW_KEY_2;
 }

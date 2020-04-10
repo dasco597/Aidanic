@@ -6,8 +6,8 @@
 #include <vector>
 
 enum struct CONTROL_SCHEME {
-	GAMEPLAY, // captured mouse (activate with key_1)
-	EDITOR // free mouse controls (activate with key_2)
+	EDITOR, // free mouse controls (activate with key_1)
+	GAMEPLAY // captured mouse (activate with key_2)
 };
 
 class Aidanic;
@@ -65,11 +65,11 @@ private:
 	bool mouseLeftClickDown = false;
     uint32_t windowSize[2] = { 0, 0 };
 	double mousePosPrev[2] = { 0.0, 0.0 };
-	CONTROL_SCHEME controlScheme = CONTROL_SCHEME::GAMEPLAY;
+	CONTROL_SCHEME controlScheme = CONTROL_SCHEME::EDITOR;
 
 	enum struct INPUTS_INTERNAL {
-		GAMEPLAY_MODE,
-		EDITOR_MODE
+		EDITOR_MODE,
+		GAMEPLAY_MODE
 	};
     std::map<uint32_t, INPUTS> keyBindings;
 	std::map<INPUTS_INTERNAL, uint32_t> keyBindingsInternal;
