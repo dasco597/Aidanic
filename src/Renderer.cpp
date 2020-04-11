@@ -32,7 +32,7 @@ enum {
 
 // INITIALIZATION
 
-void Renderer::init(Aidanic* app, std::vector<const char*>& requiredExtensions, Models::Sphere sphere, glm::mat4 viewInverse, glm::mat4 projInverse, glm::vec3 cameraPos) {
+void Renderer::init(Aidanic* app, std::vector<const char*>& requiredExtensions, std::vector<Models::Sphere>& spheres, glm::mat4 viewInverse, glm::mat4 projInverse, glm::vec3 cameraPos) {
     AID_INFO("Initializing vulkan renderer...");
     this->aidanicApp = app;
 
@@ -51,7 +51,7 @@ void Renderer::init(Aidanic* app, std::vector<const char*>& requiredExtensions, 
     uniformData.cameraPos = glm::vec4(cameraPos, 1.f);
 
     createRenderImage();
-    createScene(sphere);
+    createScene(spheres);
 
     createRayTracingPipeline();
     createShaderBindingTable();
@@ -318,18 +318,19 @@ void Renderer::createSyncObjects() {
     }
 }
 
-void Renderer::createScene(Models::Sphere sphere) {
+void Renderer::createScene(std::vector<Models::Sphere>& spheres) {
     // create sphere AABBs
 
-    aabbSphere.init(sphere);
+    sphereAABBs.resize(spheres.size());
+    for (int s = 0; s < spheres.size(); s++) sphereAABBs[s].init(spheres[s]);
 
     // create buffers
 
     if (sizeof(Vk::AABB) % 8 != 0) {
         AID_ERROR("Vk::AABB size not a multiple of 8bytes -> add padding to struct or aabb buffer");
     }
-    createBuffer(bufferSpheres, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, sizeof(Vk::AABB) * 1);
-    uploadBufferDeviceLocal(bufferSpheres, &aabbSphere, sizeof(Vk::AABB) * 1);
+    createBuffer(bufferSpheres, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, sizeof(Vk::AABB) * sphereAABBs.size());
+    uploadBufferDeviceLocal(bufferSpheres, sphereAABBs.data(), sizeof(Vk::AABB) * sphereAABBs.size());
 
     bufferUBO.dynamicStride = getUBOOffsetAligned(sizeof(UniformData));
     createBuffer(bufferUBO, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT, static_cast<VkDeviceSize>(swapchain.numImages) * bufferUBO.dynamicStride);
@@ -342,7 +343,7 @@ void Renderer::createScene(Models::Sphere sphere) {
     VkGeometryAABBNV geometryAabbSphere = {};
     geometryAabbSphere.sType = VK_STRUCTURE_TYPE_GEOMETRY_AABB_NV;
     geometryAabbSphere.aabbData = bufferSpheres.buffer;
-    geometryAabbSphere.numAABBs = 1;
+    geometryAabbSphere.numAABBs = sphereAABBs.size();
     geometryAabbSphere.stride = sizeof(Vk::AABB);
     geometryAabbSphere.offset = 0;
 

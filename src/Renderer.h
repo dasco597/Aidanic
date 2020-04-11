@@ -18,7 +18,7 @@ class ImGuiVk;
 
 class Renderer {
 public:
-    void init(Aidanic* app, std::vector<const char*>& requiredExtensions, Models::Sphere sphere, glm::mat4 viewInverse, glm::mat4 projInverse, glm::vec3 cameraPos);
+    void init(Aidanic* app, std::vector<const char*>& requiredExtensions, std::vector<Models::Sphere>& spheres, glm::mat4 viewInverse, glm::mat4 projInverse, glm::vec3 cameraPos);
     void drawFrame(bool framebufferResized, glm::mat4 viewInverse, glm::mat4 projInverse, glm::vec3 cameraPos, ImGuiVk* imGuiRenderer, bool renderImGui = false);
     void cleanUp();
 
@@ -78,7 +78,7 @@ private:
     std::vector<VkCommandBuffer> commandBuffersRender;
     std::vector<VkCommandBuffer> commandBuffersImageCopy;
 
-    Vk::AABB aabbSphere;
+    std::vector<Vk::AABB> sphereAABBs;
     Vk::Buffer bufferSpheres, bufferUBO;
 
     struct UniformData {
@@ -118,7 +118,7 @@ private:
     void createImageViews();
     void createSyncObjects();
 
-    void createScene(Models::Sphere sphere);
+    void createScene(std::vector<Models::Sphere>& spheres);
     void createRenderImage();
     void createRayTracingPipeline();
     void createShaderBindingTable();

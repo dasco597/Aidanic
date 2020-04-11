@@ -8,9 +8,7 @@
 
 using namespace std::chrono;
 
-Models::Sphere sphere {
-    {0.0, 0.0, 0.0}, 1.0
-};
+Models::Sphere sphere ;
 
 int main() {
     Aidanic app;
@@ -45,7 +43,11 @@ void Aidanic::init() {
 
     updateMatrices();
 
-    renderer.init(this, requiredExtensions, sphere, viewInverse, projInverse, viewerPosition);
+    std::vector<Models::Sphere> spheres;
+    spheres.push_back(Models::Sphere{ {3.0, 2.0, 1.0}, 0.5 });
+    spheres.push_back(Models::Sphere{ {0.0, 0.0, 0.0}, 1.0 });
+
+    renderer.init(this, requiredExtensions, spheres, viewInverse, projInverse, viewerPosition);
     AID_INFO("Vulkan renderer RTX initialized");
 
     initImGui();
