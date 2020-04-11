@@ -19,7 +19,7 @@ class ImGuiVk;
 class Renderer {
 public:
     void init(Aidanic* app, std::vector<const char*>& requiredExtensions, Models::Sphere sphere, glm::mat4 viewInverse, glm::mat4 projInverse, glm::vec3 cameraPos);
-    void drawFrame(bool framebufferResized, glm::mat4 viewInverse, glm::mat4 projInverse, glm::vec3 cameraPos, bool renderImGui = false, ImGuiVk* imGuiRenderer = nullptr);
+    void drawFrame(bool framebufferResized, glm::mat4 viewInverse, glm::mat4 projInverse, glm::vec3 cameraPos, ImGuiVk* imGuiRenderer, bool renderImGui = false);
     void cleanUp();
 
     void createBuffer(Vk::Buffer& buffer, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkDeviceSize size);

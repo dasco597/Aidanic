@@ -32,6 +32,21 @@ void ImGuiVk::createFramebuffer() {
     framebufferInfo.layers = 1;
 
     VK_CHECK_RESULT(vkCreateFramebuffer(renderer->getDevice(), &framebufferInfo, nullptr, &framebuffer), "failed to create imgui framebuffer");
+
+    // render image barrier
+
+    VkImageSubresourceRange imageSubresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
+
+    renderImageBarrierGeneral.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    renderImageBarrierGeneral.pNext = VK_NULL_HANDLE;
+    renderImageBarrierGeneral.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+    renderImageBarrierGeneral.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+    renderImageBarrierGeneral.oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    renderImageBarrierGeneral.newLayout = VK_IMAGE_LAYOUT_GENERAL;
+    renderImageBarrierGeneral.srcQueueFamilyIndex = 0;
+    renderImageBarrierGeneral.dstQueueFamilyIndex = 0;
+    renderImageBarrierGeneral.image = renderer->getRenderImage().image;
+    renderImageBarrierGeneral.subresourceRange = imageSubresourceRange;
 }
 
 void ImGuiVk::createFontTexture() {
@@ -413,20 +428,6 @@ void ImGuiVk::createCommandBuffers() {
     for (int i = 0; i < renderer->getNumSwapchainImages(); i++)
         VK_CHECK_RESULT(vkAllocateCommandBuffers(renderer->getDevice(), &info, &perFrameResources[i].commandBuffer), "failed to allocate imgui command buffer");
 
-    // render image barrier
-
-    VkImageSubresourceRange imageSubresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
-
-    renderImageBarrierGeneral.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-    renderImageBarrierGeneral.pNext = VK_NULL_HANDLE;
-    renderImageBarrierGeneral.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-    renderImageBarrierGeneral.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
-    renderImageBarrierGeneral.oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-    renderImageBarrierGeneral.newLayout = VK_IMAGE_LAYOUT_GENERAL;
-    renderImageBarrierGeneral.srcQueueFamilyIndex = 0;
-    renderImageBarrierGeneral.dstQueueFamilyIndex = 0;
-    renderImageBarrierGeneral.image = renderer->getRenderImage().image;
-    renderImageBarrierGeneral.subresourceRange = imageSubresourceRange;
 }
 
 void ImGuiVk::recordRenderCommands(uint32_t swapchainIndex) {
@@ -542,6 +543,11 @@ void ImGuiVk::recordRenderCommands(uint32_t swapchainIndex) {
     vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &renderImageBarrierGeneral);
     vkEndCommandBuffer(commandBuffer);
     frameResources.render = true;
+}
+
+void ImGuiVk::recreateFramebuffer() {
+    vkDestroyFramebuffer(renderer->getDevice(), framebuffer, VK_ALLOCATOR);
+    createFramebuffer();
 }
 
 void ImGuiVk::setupRenderState(VkCommandBuffer commandBuffer, PerFrame& perFrameResources, int fb_width, int fb_height, ImDrawData* draw_data) {

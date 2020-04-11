@@ -76,7 +76,7 @@ void Aidanic::loop() {
         if (renderImGui) updateImGui();
 
         // submit draw commands for this frame
-        renderer.drawFrame(windowResized, viewInverse, projInverse, viewerPosition, renderImGui, &imGuiRenderer);
+        renderer.drawFrame(windowResized, viewInverse, projInverse, viewerPosition, &imGuiRenderer, renderImGui);
     }
 }
 

@@ -12,10 +12,14 @@ struct ImDrawData;
 class ImGuiVk {
 public:
     void init(Renderer* renderer);
-    float* getpClearValue() { return &clearValue.color.float32[0]; }
+
     void recordRenderCommands(uint32_t swapchainIndex);
+    void recreateFramebuffer();
+
+    float* getpClearValue() { return &clearValue.color.float32[0]; }
     VkCommandBuffer getCommandBuffer(uint32_t swapchainIndex) { return perFrameResources[swapchainIndex].commandBuffer; }
     bool shouldRender(uint32_t swapchainIndex) { return perFrameResources[swapchainIndex].render; }
+
     void cleanup();
 
 private:

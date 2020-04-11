@@ -874,7 +874,7 @@ void Renderer::createCommandBuffersImageCopy() {
 
 // MAIN LOOP
 
-void Renderer::drawFrame(bool framebufferResized, glm::mat4 viewInverse, glm::mat4 projInverse, glm::vec3 cameraPos, bool renderImGui, ImGuiVk* imGuiRenderer) {
+void Renderer::drawFrame(bool framebufferResized, glm::mat4 viewInverse, glm::mat4 projInverse, glm::vec3 cameraPos, ImGuiVk* imGuiRenderer, bool renderImGui) {
     vkWaitForFences(device, 1, &inFlightFences[currentFrame], VK_TRUE, DEFAULT_FENCE_TIMEOUT);
 
     uint32_t imageIndex;
@@ -883,6 +883,7 @@ void Renderer::drawFrame(bool framebufferResized, glm::mat4 viewInverse, glm::ma
     // TODO framebufferResized? debug and check result values
     if (resultAcquire == VK_ERROR_OUT_OF_DATE_KHR) {
         recreateSwapChain();
+        if (imGuiRenderer) imGuiRenderer->recreateFramebuffer();
         return;
     } else if (resultAcquire != VK_SUCCESS && resultAcquire != VK_SUBOPTIMAL_KHR) {
         AID_ERROR("failed to acquire swap chain image!");
@@ -911,8 +912,8 @@ void Renderer::drawFrame(bool framebufferResized, glm::mat4 viewInverse, glm::ma
     }
 
     // render imGui
-    imGuiRenderer->recordRenderCommands(imageIndex);
-    renderImGui &= imGuiRenderer->shouldRender(imageIndex);
+    if (imGuiRenderer && renderImGui) imGuiRenderer->recordRenderCommands(imageIndex);
+    if (imGuiRenderer) renderImGui &= imGuiRenderer->shouldRender(imageIndex);
     if (renderImGui) {
 
         VkSemaphore waitSemaphores[] = { semaphoresRenderFinished[currentFrame] };
@@ -974,6 +975,7 @@ void Renderer::drawFrame(bool framebufferResized, glm::mat4 viewInverse, glm::ma
 
         if (resultPresent == VK_ERROR_OUT_OF_DATE_KHR || resultPresent == VK_SUBOPTIMAL_KHR || framebufferResized) {
             recreateSwapChain();
+            if (imGuiRenderer) imGuiRenderer->recreateFramebuffer();
         } else if (resultPresent != VK_SUCCESS) {
             AID_ERROR("failed to present swap chain image!");
         }
@@ -1000,6 +1002,7 @@ void Renderer::recreateSwapChain() {
     createRenderImage();
     createDescriptorSets();
     createCommandBuffersRender();
+    createCommandBuffersImageCopy();
 }
 
 VKAPI_ATTR VkBool32 VKAPI_CALL Renderer::debugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity, VkDebugUtilsMessageTypeFlagsEXT messageType,
@@ -1067,8 +1070,10 @@ void Renderer::cleanupSwapChain() {
     for (auto imageView : swapchain.imageViews) vkDestroyImageView(device, imageView, VK_ALLOCATOR);
     vkDestroySwapchainKHR(device, swapchain.swapchain, VK_ALLOCATOR);
     vkFreeCommandBuffers(device, commandPool, static_cast<uint32_t>(commandBuffersRender.size()), commandBuffersRender.data());
+    vkFreeCommandBuffers(device, commandPool, static_cast<uint32_t>(commandBuffersImageCopy.size()), commandBuffersImageCopy.data());
+    commandBuffersRender.clear();
+    commandBuffersImageCopy.clear();
     vkDestroyDescriptorPool(device, descriptorPool, VK_ALLOCATOR);
-
     renderImage.destroy(device);
 }
 
