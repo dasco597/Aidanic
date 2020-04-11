@@ -1,12 +1,16 @@
 #version 460
 #extension GL_NV_ray_tracing : require
-#extension GL_EXT_nonuniform_qualifier : enable
 
-layout(location = 0) rayPayloadInNV vec3 hitValue;
-hitAttributeNV vec3 attribs;
+layout(location = 0) rayPayloadInNV vec4 hitValue;
+
+struct Sphere {
+    vec4 posRadius;
+};
+layout(std430, binding = 0) readonly buffer Spheres { Sphere spheres[]; };
+
+hitAttributeNV vec3 intersection;
 
 void main()
 {
-  const vec3 barycentricCoords = vec3(1.0f - attribs.x - attribs.y, attribs.x, attribs.y);
-  hitValue = barycentricCoords;
+    hitValue = vec4(0.3, 0.7, 0.9, 1.0);
 }

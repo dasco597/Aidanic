@@ -53,10 +53,10 @@ private:
     float radiansPerMousePosPitch = 0.0008f; // vertical - y axis
     float radiansPerSecondRoll = _AID_PI / 4.0f; // x axis
 
-    glm::vec3 viewerPosition    = glm::vec3(0.f);			// your position in the world
-    glm::vec3 viewerForward     = glm::vec3(1.f, 0.f, 0.f);	// direction you are facing
-    glm::vec3 viewerUp          = glm::vec3(0.f, 0.f, 1.f);	// viewer up direction
-    glm::vec3 viewerLeft        = glm::vec3(0.f, 1.f, 0.f); // cross product up x forward
+    glm::vec3 viewerPosition    = glm::vec3(-5.f, 0.f, 0.f);    // your position in the world
+    glm::vec3 viewerForward     = glm::vec3(1.f, 0.f, 0.f);	    // direction you are facing
+    glm::vec3 viewerUp          = glm::vec3(0.f, 0.f, 1.f);	    // viewer up direction
+    glm::vec3 viewerLeft        = glm::vec3(0.f, 1.f, 0.f);     // cross product up x forward
 
     glm::mat4 viewInverse = glm::mat4(1.0f);
     glm::mat4 projInverse = glm::mat4(1.0f);

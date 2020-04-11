@@ -5,6 +5,50 @@
 
 using namespace Vk;
 
+std::string Vk::_errorString(VkResult res)
+{
+    switch (res)
+    {
+#define STR(r) \
+        case VK_##r: return #r
+        STR(NOT_READY);
+        STR(TIMEOUT);
+        STR(EVENT_SET);
+        STR(EVENT_RESET);
+        STR(INCOMPLETE);
+        STR(ERROR_OUT_OF_HOST_MEMORY);
+        STR(ERROR_OUT_OF_DEVICE_MEMORY);
+        STR(ERROR_INITIALIZATION_FAILED);
+        STR(ERROR_DEVICE_LOST);
+        STR(ERROR_MEMORY_MAP_FAILED);
+        STR(ERROR_LAYER_NOT_PRESENT);
+        STR(ERROR_EXTENSION_NOT_PRESENT);
+        STR(ERROR_FEATURE_NOT_PRESENT);
+        STR(ERROR_INCOMPATIBLE_DRIVER);
+        STR(ERROR_TOO_MANY_OBJECTS);
+        STR(ERROR_FORMAT_NOT_SUPPORTED);
+        STR(ERROR_SURFACE_LOST_KHR);
+        STR(ERROR_NATIVE_WINDOW_IN_USE_KHR);
+        STR(SUBOPTIMAL_KHR);
+        STR(ERROR_OUT_OF_DATE_KHR);
+        STR(ERROR_INCOMPATIBLE_DISPLAY_KHR);
+        STR(ERROR_VALIDATION_FAILED_EXT);
+        STR(ERROR_INVALID_SHADER_NV);
+#undef STR
+    default:
+        return std::to_string(res);
+    }
+}
+
+void Vk::AABB::init(Models::Sphere sphere) {
+    aabb_minx = sphere.pos[0] - sphere.radius;
+    aabb_miny = sphere.pos[1] - sphere.radius;
+    aabb_minz = sphere.pos[2] - sphere.radius;
+    aabb_maxx = sphere.pos[0] + sphere.radius;
+    aabb_maxy = sphere.pos[1] + sphere.radius;
+    aabb_maxz = sphere.pos[2] + sphere.radius;
+}
+
 SwapChainSupportDetails Vk::querySwapChainSupport(VkPhysicalDevice device, VkSurfaceKHR surface) {
     Vk::SwapChainSupportDetails details;
 
@@ -39,21 +83,22 @@ QueueFamilyIndices Vk::findQueueFamilies(VkPhysicalDevice device, VkSurfaceKHR s
     vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, queueFamilies.data());
 
     int i = 0;
-    for (const auto& queueFamily : queueFamilies) {
-        if (queueFamily.queueFlags & VK_QUEUE_GRAPHICS_BIT) {
+    for (const VkQueueFamilyProperties& queueFamily : queueFamilies) {
+        if (queueFamily.queueFlags & VK_QUEUE_GRAPHICS_BIT)
             indices.graphicsFamily = i;
-        }
+
+        if (queueFamily.queueFlags & VK_QUEUE_COMPUTE_BIT)
+            indices.computeFamily = i;
+
+        //if (queueFamily.queueFlags & VK_QUEUE_TRANSFER_BIT)
+        //    indices.transferFamily = i;
 
         VkBool32 presentSupport = false;
         vkGetPhysicalDeviceSurfaceSupportKHR(device, i, surface, &presentSupport);
-
-        if (presentSupport) {
+        if (presentSupport)
             indices.presentFamily = i;
-        }
 
-        if (indices.isComplete()) {
-            break;
-        }
+        if (indices.isComplete()) break;
 
         i++;
     }
@@ -115,15 +160,9 @@ void Vk::endSingleTimeCommands(VkDevice device, VkCommandBuffer commandBuffer, V
     submitInfo.commandBufferCount = 1;
     submitInfo.pCommandBuffers = &commandBuffer;
 
-    VkFenceCreateInfo fenceInfo{};
-    fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
-    VkFence fence;
-    VK_CHECK_RESULT(vkCreateFence(device, &fenceInfo, nullptr, &fence), "failed to create endSingleTimeCommands() fence");
+    VK_CHECK_RESULT(vkQueueSubmit(queue, 1, &submitInfo, VK_NULL_HANDLE), "failed to submit single time command buffer");
+    vkQueueWaitIdle(queue);
 
-    VK_CHECK_RESULT(vkQueueSubmit(queue, 1, &submitInfo, fence), "failed to submit single time command buffer");
-    VK_CHECK_RESULT(vkWaitForFences(device, 1, &fence, VK_TRUE, DEFAULT_FENCE_TIMEOUT), "single time command buffer submit fence wait failed");
-
-    vkDestroyFence(device, fence, nullptr);
     vkFreeCommandBuffers(device, commandPool, 1, &commandBuffer);
 }
 

@@ -1,8 +1,10 @@
 file(GLOB_RECURSE HEADERS   ${CMAKE_CURRENT_SOURCE_DIR}/*.h)
 file(GLOB_RECURSE SOURCE    ${CMAKE_CURRENT_SOURCE_DIR}/*.cpp)
 file(GLOB_RECURSE SHADERS   ${CMAKE_CURRENT_SOURCE_DIR}/shaders/*.rgen
-                            ${CMAKE_CURRENT_SOURCE_DIR}/shaders/*.rmiss
+                            ${CMAKE_CURRENT_SOURCE_DIR}/shaders/*.rint
+                            ${CMAKE_CURRENT_SOURCE_DIR}/shaders/*.rahit
                             ${CMAKE_CURRENT_SOURCE_DIR}/shaders/*.rchit
+                            ${CMAKE_CURRENT_SOURCE_DIR}/shaders/*.rmiss
                             ${CMAKE_CURRENT_SOURCE_DIR}/shaders/*.vert
                             ${CMAKE_CURRENT_SOURCE_DIR}/shaders/*.frag)
 set(IMGUI                   ${PROJECT_SOURCE_DIR}/vendor/imgui/imgui.cpp

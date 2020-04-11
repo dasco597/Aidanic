@@ -2,6 +2,7 @@
 
 #include "tools/VkHelper.h"
 #include "ImguiVk.h"
+#include "Models.h"
 
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
 //#define GLM_FORCE_DEFAULT_ALIGNED_GENTYPES
@@ -17,7 +18,7 @@ class ImGuiVk;
 
 class Renderer {
 public:
-    void init(Aidanic* app, std::vector<const char*>& requiredExtensions, Model model, glm::mat4 viewInverse, glm::mat4 projInverse, glm::vec3 cameraPos);
+    void init(Aidanic* app, std::vector<const char*>& requiredExtensions, Models::Sphere sphere, glm::mat4 viewInverse, glm::mat4 projInverse, glm::vec3 cameraPos);
     void drawFrame(bool framebufferResized, glm::mat4 viewInverse, glm::mat4 projInverse, glm::vec3 cameraPos, bool renderImGui = false, ImGuiVk* imGuiRenderer = nullptr);
     void cleanUp();
 
@@ -49,8 +50,7 @@ private:
     VkMemoryRequirements memoryRequirements{};
 
     struct {
-        VkQueue graphics;
-        VkQueue present;
+        VkQueue graphics, compute, present;
     } queues;
 
     struct {
@@ -64,7 +64,7 @@ private:
 
     VkPhysicalDeviceRayTracingPropertiesNV rayTracingProperties{};
     Vk::StorageImage renderImage;
-    Vk::AccelerationStructure bottomLevelAS, topLevelAS;
+    Vk::AccelerationStructure blasSphere, tlas;
     Vk::Buffer shaderBindingTable;
 
     VkPipeline pipeline;
@@ -78,7 +78,8 @@ private:
     std::vector<VkCommandBuffer> commandBuffersRender;
     std::vector<VkCommandBuffer> commandBuffersImageCopy;
 
-    Vk::Buffer vertexBuffer, indexBuffer, uboBuffer;
+    Vk::AABB aabbSphere;
+    Vk::Buffer bufferSpheres, bufferUBO;
 
     struct UniformData {
         glm::mat4 viewInverse = glm::mat4(1.0f);
@@ -117,14 +118,14 @@ private:
     void createImageViews();
     void createSyncObjects();
 
-    void createScene(Model model);
+    void createScene(Models::Sphere sphere);
     void createRenderImage();
     void createRayTracingPipeline();
     void createShaderBindingTable();
     void createDescriptorSets();
     void createCommandBuffersRender();
     void createCommandBuffersImageCopy();
-    void createBottomLevelAccelerationStructure(const VkGeometryNV* geometries);
+    void createBottomLevelAccelerationStructure(Vk::AccelerationStructure& blas, const VkGeometryNV* geometries, uint32_t geometryCount);
     void createTopLevelAccelerationStructure();
 
     // main loop

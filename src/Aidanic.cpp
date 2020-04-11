@@ -1,4 +1,5 @@
 #include "Aidanic.h"
+#include "Models.h"
 #include "tools/Log.h"
 
 #include <gtx/rotate_vector.hpp>
@@ -7,12 +8,9 @@
 
 using namespace std::chrono;
 
-std::vector<Vertex> vertices = {
-    { { 5.0f,  0.0f,  0.577f } },
-    { { 5.0f, -0.5f, -0.289f } },
-    { { 5.0f,  0.5f, -0.289f } }
+Models::Sphere sphere {
+    {0.0, 0.0, 0.0}, 1.0
 };
-std::vector<uint32_t> indices = { 0, 1, 2 };
 
 int main() {
     Aidanic app;
@@ -45,14 +43,9 @@ void Aidanic::init() {
     ioInterface.init(this, requiredExtensions, windowSize[0], windowSize[1]);
     AID_INFO("IO interface initialized");
 
-    Model model{ 
-        std::vector<Vertex>(vertices),
-        std::vector<uint32_t>(indices)
-    };
-
     updateMatrices();
 
-    renderer.init(this, requiredExtensions, model, viewInverse, projInverse, viewerPosition);
+    renderer.init(this, requiredExtensions, sphere, viewInverse, projInverse, viewerPosition);
     AID_INFO("Vulkan renderer RTX initialized");
 
     initImGui();

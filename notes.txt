@@ -1,18 +1,9 @@
 todo:
 
-unlocked mouse control scheme
-imgui for fov control - don't plan (remember the bible verse!) try stick with ioInterface/Renderer setup (imgui in ioInterface) and see if it works!
-sdf with intersection shader or some shit
+multiple spheres
+add sphere color
+ssbo with lights
+add spheres with gui
+switch miss shaders with gui to toggle background
 
-width, height
-render-image view, format
-numimages
-device
-physicaldevice
-queues.graphics
-commandPool
-surface
-
-createBuffer
-uploadBufferHostVisible
-destroyBuffer
+rtx sdf example https://github.com/georgeouzou/vk_exp/blob/master/src/main.cpp

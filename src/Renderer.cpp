@@ -17,20 +17,22 @@ const bool enableValidationLayers = true;
 
 // shader files (relative to assets folder, _CONFIG::getAssetsPath())
 #define SHADER_SRC_RAYGEN "spirv/raygen.rgen.spv"
-#define SHADER_SRC_MISS "spirv/miss.rmiss.spv"
+#define SHADER_SRC_INTERSECTION "spirv/intersect.rint.spv"
 #define SHADER_SRC_CLOSEST_HIT "spirv/closesthit.rchit.spv"
+#define SHADER_SRC_MISS "spirv/miss.rmiss.spv"
 
 // shader indices
 enum {
     INDEX_RAYGEN,
-    INDEX_MISS,
+    INDEX_INTERSECTION,
     INDEX_CLOSEST_HIT,
+    INDEX_MISS,
     SHADER_COUNT
 };
 
 // INITIALIZATION
 
-void Renderer::init(Aidanic* app, std::vector<const char*>& requiredExtensions, Model model, glm::mat4 viewInverse, glm::mat4 projInverse, glm::vec3 cameraPos) {
+void Renderer::init(Aidanic* app, std::vector<const char*>& requiredExtensions, Models::Sphere sphere, glm::mat4 viewInverse, glm::mat4 projInverse, glm::vec3 cameraPos) {
     AID_INFO("Initializing vulkan renderer...");
     this->aidanicApp = app;
 
@@ -48,8 +50,8 @@ void Renderer::init(Aidanic* app, std::vector<const char*>& requiredExtensions, 
     uniformData.projInverse = projInverse;
     uniformData.cameraPos = glm::vec4(cameraPos, 1.f);
 
-    createScene(model);
     createRenderImage();
+    createScene(sphere);
 
     createRayTracingPipeline();
     createShaderBindingTable();
@@ -156,7 +158,7 @@ void Renderer::createLogicalDevice() {
     Vk::QueueFamilyIndices queueIndices = Vk::findQueueFamilies(physicalDevice, surface);
 
     std::vector<VkDeviceQueueCreateInfo> queueCreateInfos;
-    std::set<uint32_t> uniqueQueueFamilies = { queueIndices.graphicsFamily.value(), queueIndices.presentFamily.value() };
+    std::set<uint32_t> uniqueQueueFamilies = { queueIndices.graphicsFamily.value(), queueIndices.computeFamily.value(), queueIndices.presentFamily.value() };
 
     float queuePriority = 1.0f;
     for (uint32_t queueFamily : uniqueQueueFamilies) {
@@ -191,6 +193,7 @@ void Renderer::createLogicalDevice() {
     VK_CHECK_RESULT(vkCreateDevice(physicalDevice, &createInfo, nullptr, &device), "failed to create logical device!");
 
     vkGetDeviceQueue(device, queueIndices.graphicsFamily.value(), 0, &queues.graphics);
+    vkGetDeviceQueue(device, queueIndices.computeFamily.value(), 0, &queues.compute);
     vkGetDeviceQueue(device, queueIndices.presentFamily.value(), 0, &queues.present);
 
     // Get VK_NV_ray_tracing related function pointers
@@ -315,43 +318,53 @@ void Renderer::createSyncObjects() {
     }
 }
 
-void Renderer::createScene(Model model) {
+void Renderer::createScene(Models::Sphere sphere) {
+    // create sphere AABBs
+
+    aabbSphere.init(sphere);
+
     // create buffers
 
-    createBuffer(vertexBuffer, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, sizeof(Vertex) * model.vertices.size());
-    uploadBufferDeviceLocal(vertexBuffer, model.vertices.data(), vertexBuffer.size);
+    if (sizeof(Vk::AABB) % 8 != 0) {
+        AID_ERROR("Vk::AABB size not a multiple of 8bytes -> add padding to struct or aabb buffer");
+    }
+    createBuffer(bufferSpheres, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, sizeof(Vk::AABB) * 1);
+    uploadBufferDeviceLocal(bufferSpheres, &aabbSphere, sizeof(Vk::AABB) * 1);
 
-    createBuffer(indexBuffer, VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, sizeof(uint32_t) * model.indices.size());
-    uploadBufferDeviceLocal(indexBuffer, model.indices.data(), indexBuffer.size);
-
-    uboBuffer.dynamicStride = getUBOOffsetAligned(sizeof(UniformData));
-    createBuffer(uboBuffer, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT, static_cast<VkDeviceSize>(swapchain.numImages) * uboBuffer.dynamicStride);
+    bufferUBO.dynamicStride = getUBOOffsetAligned(sizeof(UniformData));
+    createBuffer(bufferUBO, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT, static_cast<VkDeviceSize>(swapchain.numImages) * bufferUBO.dynamicStride);
     for (int i = 0; i < swapchain.numImages; i++) {
-        uploadBufferHostVisible(uboBuffer, &uniformData, sizeof(UniformData), static_cast<VkDeviceSize>(i) * uboBuffer.dynamicStride);
+        uploadBufferHostVisible(bufferUBO, &uniformData, sizeof(UniformData), static_cast<VkDeviceSize>(i) * bufferUBO.dynamicStride);
     }
 
     // create a bottom-level acceleration structure containing the scene geometry
 
-    VkGeometryNV geometry{};
-    geometry.sType = VK_STRUCTURE_TYPE_GEOMETRY_NV;
-    geometry.geometryType = VK_GEOMETRY_TYPE_TRIANGLES_NV;
-    geometry.geometry.triangles.sType = VK_STRUCTURE_TYPE_GEOMETRY_TRIANGLES_NV;
-    geometry.geometry.triangles.vertexData = vertexBuffer.buffer;
-    geometry.geometry.triangles.vertexOffset = 0;
-    geometry.geometry.triangles.vertexCount = static_cast<uint32_t>(model.vertices.size());
-    geometry.geometry.triangles.vertexStride = sizeof(Vertex);
-    geometry.geometry.triangles.vertexFormat = VK_FORMAT_R32G32B32_SFLOAT;
-    geometry.geometry.triangles.indexData = indexBuffer.buffer;
-    geometry.geometry.triangles.indexOffset = 0;
-    geometry.geometry.triangles.indexCount = static_cast<uint32_t>(model.indices.size());
-    geometry.geometry.triangles.indexType = VK_INDEX_TYPE_UINT32;
-    geometry.geometry.triangles.transformData = VK_NULL_HANDLE;
-    geometry.geometry.triangles.transformOffset = 0;
-    geometry.geometry.aabbs = {};
-    geometry.geometry.aabbs.sType = { VK_STRUCTURE_TYPE_GEOMETRY_AABB_NV };
-    geometry.flags = VK_GEOMETRY_OPAQUE_BIT_NV;
+    VkGeometryAABBNV geometryAabbSphere = {};
+    geometryAabbSphere.sType = VK_STRUCTURE_TYPE_GEOMETRY_AABB_NV;
+    geometryAabbSphere.aabbData = bufferSpheres.buffer;
+    geometryAabbSphere.numAABBs = 1;
+    geometryAabbSphere.stride = sizeof(Vk::AABB);
+    geometryAabbSphere.offset = 0;
 
-    createBottomLevelAccelerationStructure(&geometry);
+    VkGeometryNV geometrySphere{};
+    geometrySphere.sType = VK_STRUCTURE_TYPE_GEOMETRY_NV;
+    geometrySphere.flags = VK_GEOMETRY_OPAQUE_BIT_NV;
+    geometrySphere.geometryType = VK_GEOMETRY_TYPE_AABBS_NV;
+    geometrySphere.geometry.aabbs = geometryAabbSphere;
+
+    geometrySphere.geometry.triangles.sType = VK_STRUCTURE_TYPE_GEOMETRY_TRIANGLES_NV;
+    geometrySphere.geometry.triangles.vertexData = VK_NULL_HANDLE;
+    geometrySphere.geometry.triangles.vertexCount = 0;
+    geometrySphere.geometry.triangles.vertexOffset = 0;
+    geometrySphere.geometry.triangles.vertexFormat = VK_FORMAT_R32G32B32_SFLOAT;
+    geometrySphere.geometry.triangles.indexData = VK_NULL_HANDLE;
+    geometrySphere.geometry.triangles.indexCount = 0;
+    geometrySphere.geometry.triangles.indexOffset = 0;
+    geometrySphere.geometry.triangles.indexType = VK_INDEX_TYPE_NONE_NV;
+    geometrySphere.geometry.triangles.transformData = VK_NULL_HANDLE;
+    geometrySphere.geometry.triangles.transformOffset = 0;
+
+    createBottomLevelAccelerationStructure(blasSphere, &geometrySphere, 1);
 
     // create the top-level acceleration structure containing BLAS instance information
 
@@ -367,7 +380,7 @@ void Renderer::createScene(Model model) {
     geometryInstance.mask = 0xff;
     geometryInstance.instanceOffset = 0;
     geometryInstance.flags = VK_GEOMETRY_INSTANCE_TRIANGLE_CULL_DISABLE_BIT_NV;
-    geometryInstance.accelerationStructureHandle = bottomLevelAS.handle;
+    geometryInstance.accelerationStructureHandle = blasSphere.handle;
 
     Vk::Buffer instanceBuffer;
     createBuffer(instanceBuffer, VK_BUFFER_USAGE_RAY_TRACING_BIT_NV, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT, sizeof(Vk::BLASInstance));
@@ -382,11 +395,11 @@ void Renderer::createScene(Model model) {
     memoryRequirementsInfo.type = VK_ACCELERATION_STRUCTURE_MEMORY_REQUIREMENTS_TYPE_BUILD_SCRATCH_NV;
 
     VkMemoryRequirements2 memReqBottomLevelAS;
-    memoryRequirementsInfo.accelerationStructure = bottomLevelAS.accelerationStructure;
+    memoryRequirementsInfo.accelerationStructure = blasSphere.accelerationStructure;
     vkGetAccelerationStructureMemoryRequirementsNV(device, &memoryRequirementsInfo, &memReqBottomLevelAS);
 
     VkMemoryRequirements2 memReqTopLevelAS;
-    memoryRequirementsInfo.accelerationStructure = topLevelAS.accelerationStructure;
+    memoryRequirementsInfo.accelerationStructure = tlas.accelerationStructure;
     vkGetAccelerationStructureMemoryRequirementsNV(device, &memoryRequirementsInfo, &memReqTopLevelAS);
 
     const VkDeviceSize scratchBufferSize = std::max(memReqBottomLevelAS.memoryRequirements.size, memReqTopLevelAS.memoryRequirements.size);
@@ -401,8 +414,9 @@ void Renderer::createScene(Model model) {
     VkAccelerationStructureInfoNV buildInfo{};
     buildInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_INFO_NV;
     buildInfo.type = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_NV;
+    buildInfo.instanceCount = 0;
     buildInfo.geometryCount = 1;
-    buildInfo.pGeometries = &geometry;
+    buildInfo.pGeometries = &geometrySphere;
 
     vkCmdBuildAccelerationStructureNV(
         cmdBuffer,
@@ -410,7 +424,7 @@ void Renderer::createScene(Model model) {
         VK_NULL_HANDLE,
         0,
         VK_FALSE,
-        bottomLevelAS.accelerationStructure,
+        blasSphere.accelerationStructure,
         VK_NULL_HANDLE,
         scratchBuffer.buffer,
         0);
@@ -434,36 +448,36 @@ void Renderer::createScene(Model model) {
         instanceBuffer.buffer,
         0,
         VK_FALSE,
-        topLevelAS.accelerationStructure,
+        tlas.accelerationStructure,
         VK_NULL_HANDLE,
         scratchBuffer.buffer,
         0);
 
     vkCmdPipelineBarrier(cmdBuffer, VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_NV, VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_NV, 0, 1, &memoryBarrier, 0, 0, 0, 0);
 
-    Vk::endSingleTimeCommands(device, cmdBuffer, queues.graphics, commandPool);
+    Vk::endSingleTimeCommands(device, cmdBuffer, queues.compute, commandPool);
 
     destroyBuffer(instanceBuffer);
     destroyBuffer(scratchBuffer);
 }
 
-void Renderer::createBottomLevelAccelerationStructure(const VkGeometryNV* geometries) {
+void Renderer::createBottomLevelAccelerationStructure(Vk::AccelerationStructure& blas, const VkGeometryNV* geometries, uint32_t geometryCount) {
     VkAccelerationStructureInfoNV accelerationStructureInfo{};
     accelerationStructureInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_INFO_NV;
     accelerationStructureInfo.type = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_NV;
     accelerationStructureInfo.instanceCount = 0;
-    accelerationStructureInfo.geometryCount = 1;
+    accelerationStructureInfo.geometryCount = geometryCount;
     accelerationStructureInfo.pGeometries = geometries;
 
     VkAccelerationStructureCreateInfoNV accelerationStructureCI{};
     accelerationStructureCI.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_NV;
     accelerationStructureCI.info = accelerationStructureInfo;
-    VK_CHECK_RESULT(vkCreateAccelerationStructureNV(device, &accelerationStructureCI, VK_ALLOCATOR, &bottomLevelAS.accelerationStructure), "failed to create bottom level acceleration structure");
+    VK_CHECK_RESULT(vkCreateAccelerationStructureNV(device, &accelerationStructureCI, VK_ALLOCATOR, &blas.accelerationStructure), "failed to create bottom level acceleration structure");
 
     VkAccelerationStructureMemoryRequirementsInfoNV memoryRequirementsInfo{};
     memoryRequirementsInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_MEMORY_REQUIREMENTS_INFO_NV;
     memoryRequirementsInfo.type = VK_ACCELERATION_STRUCTURE_MEMORY_REQUIREMENTS_TYPE_OBJECT_NV;
-    memoryRequirementsInfo.accelerationStructure = bottomLevelAS.accelerationStructure;
+    memoryRequirementsInfo.accelerationStructure = blas.accelerationStructure;
 
     VkMemoryRequirements2 memoryRequirements{};
     vkGetAccelerationStructureMemoryRequirementsNV(device, &memoryRequirementsInfo, &memoryRequirements);
@@ -472,15 +486,15 @@ void Renderer::createBottomLevelAccelerationStructure(const VkGeometryNV* geomet
     memoryAllocateInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
     memoryAllocateInfo.allocationSize = memoryRequirements.memoryRequirements.size;
     memoryAllocateInfo.memoryTypeIndex = Vk::findMemoryType(physicalDevice, memoryRequirements.memoryRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-    VK_CHECK_RESULT(vkAllocateMemory(device, &memoryAllocateInfo, VK_ALLOCATOR, &bottomLevelAS.memory), "failed to allocate bottom level acceleration structure memory");
+    VK_CHECK_RESULT(vkAllocateMemory(device, &memoryAllocateInfo, VK_ALLOCATOR, &blas.memory), "failed to allocate bottom level acceleration structure memory");
 
     VkBindAccelerationStructureMemoryInfoNV accelerationStructureMemoryInfo{};
     accelerationStructureMemoryInfo.sType = VK_STRUCTURE_TYPE_BIND_ACCELERATION_STRUCTURE_MEMORY_INFO_NV;
-    accelerationStructureMemoryInfo.accelerationStructure = bottomLevelAS.accelerationStructure;
-    accelerationStructureMemoryInfo.memory = bottomLevelAS.memory;
+    accelerationStructureMemoryInfo.accelerationStructure = blas.accelerationStructure;
+    accelerationStructureMemoryInfo.memory = blas.memory;
     VK_CHECK_RESULT(vkBindAccelerationStructureMemoryNV(device, 1, &accelerationStructureMemoryInfo), "failed to bind acceleration structure memory");
 
-    VK_CHECK_RESULT(vkGetAccelerationStructureHandleNV(device, bottomLevelAS.accelerationStructure, sizeof(uint64_t), &bottomLevelAS.handle), "failed to get bottom level acceleration structure handle");
+    VK_CHECK_RESULT(vkGetAccelerationStructureHandleNV(device, blas.accelerationStructure, sizeof(uint64_t), &blas.handle), "failed to get bottom level acceleration structure handle");
 }
 
 void Renderer::createTopLevelAccelerationStructure() {
@@ -493,12 +507,12 @@ void Renderer::createTopLevelAccelerationStructure() {
     VkAccelerationStructureCreateInfoNV accelerationStructureCI{};
     accelerationStructureCI.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_NV;
     accelerationStructureCI.info = accelerationStructureInfo;
-    VK_CHECK_RESULT(vkCreateAccelerationStructureNV(device, &accelerationStructureCI, VK_ALLOCATOR, &topLevelAS.accelerationStructure), "failed to create top level acceleration stucture");
+    VK_CHECK_RESULT(vkCreateAccelerationStructureNV(device, &accelerationStructureCI, VK_ALLOCATOR, &tlas.accelerationStructure), "failed to create top level acceleration stucture");
 
     VkAccelerationStructureMemoryRequirementsInfoNV memoryRequirementsInfo{};
     memoryRequirementsInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_MEMORY_REQUIREMENTS_INFO_NV;
     memoryRequirementsInfo.type = VK_ACCELERATION_STRUCTURE_MEMORY_REQUIREMENTS_TYPE_OBJECT_NV;
-    memoryRequirementsInfo.accelerationStructure = topLevelAS.accelerationStructure;
+    memoryRequirementsInfo.accelerationStructure = tlas.accelerationStructure;
 
     VkMemoryRequirements2 memoryRequirements{};
     vkGetAccelerationStructureMemoryRequirementsNV(device, &memoryRequirementsInfo, &memoryRequirements);
@@ -507,24 +521,15 @@ void Renderer::createTopLevelAccelerationStructure() {
     memoryAllocateInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
     memoryAllocateInfo.allocationSize = memoryRequirements.memoryRequirements.size;
     memoryAllocateInfo.memoryTypeIndex = Vk::findMemoryType(physicalDevice, memoryRequirements.memoryRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-    VK_CHECK_RESULT(vkAllocateMemory(device, &memoryAllocateInfo, VK_ALLOCATOR, &topLevelAS.memory), "failed to allocate top level acceleration structure memory");
+    VK_CHECK_RESULT(vkAllocateMemory(device, &memoryAllocateInfo, VK_ALLOCATOR, &tlas.memory), "failed to allocate top level acceleration structure memory");
 
     VkBindAccelerationStructureMemoryInfoNV accelerationStructureMemoryInfo{};
     accelerationStructureMemoryInfo.sType = VK_STRUCTURE_TYPE_BIND_ACCELERATION_STRUCTURE_MEMORY_INFO_NV;
-    accelerationStructureMemoryInfo.accelerationStructure = topLevelAS.accelerationStructure;
-    accelerationStructureMemoryInfo.memory = topLevelAS.memory;
+    accelerationStructureMemoryInfo.accelerationStructure = tlas.accelerationStructure;
+    accelerationStructureMemoryInfo.memory = tlas.memory;
     VK_CHECK_RESULT(vkBindAccelerationStructureMemoryNV(device, 1, &accelerationStructureMemoryInfo), "failed to bind acceleration structure memory");
 
-    VK_CHECK_RESULT(vkGetAccelerationStructureHandleNV(device, topLevelAS.accelerationStructure, sizeof(uint64_t), &topLevelAS.handle), "failed to get top level acceleration structure handle");
-}
-
-void Renderer::createShaderBindingTable() {
-    uint32_t sbtSize = rayTracingProperties.shaderGroupHandleSize * SHADER_COUNT;
-    uint8_t* shaderGroupHandleStorage = new uint8_t[sbtSize];
-    VK_CHECK_RESULT(vkGetRayTracingShaderGroupHandlesNV(device, pipeline, 0, SHADER_COUNT, sbtSize, shaderGroupHandleStorage), "failed to get ray tracing shader group handles");
-
-    createBuffer(shaderBindingTable, VK_BUFFER_USAGE_RAY_TRACING_BIT_NV | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, sbtSize);
-    uploadBufferDeviceLocal(shaderBindingTable, shaderGroupHandleStorage, sbtSize);
+    VK_CHECK_RESULT(vkGetAccelerationStructureHandleNV(device, tlas.accelerationStructure, sizeof(uint64_t), &tlas.handle), "failed to get top level acceleration structure handle");
 }
 
 void Renderer::createRenderImage() {
@@ -592,10 +597,17 @@ void Renderer::createRayTracingPipeline() {
     layoutBindingUniformBuffer.descriptorCount = 1;
     layoutBindingUniformBuffer.stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_NV;
 
+    VkDescriptorSetLayoutBinding layoutBindingSpheresBuffer{};
+    layoutBindingSpheresBuffer.binding = 3;
+    layoutBindingSpheresBuffer.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    layoutBindingSpheresBuffer.descriptorCount = 1;
+    layoutBindingSpheresBuffer.stageFlags = VK_SHADER_STAGE_INTERSECTION_BIT_NV;
+
     std::vector<VkDescriptorSetLayoutBinding> bindings({
         layoutBindingAccelerationStructure,
         layoutBindingRenderImage,
-        layoutBindingUniformBuffer });
+        layoutBindingUniformBuffer,
+        layoutBindingSpheresBuffer });
 
     VkDescriptorSetLayoutCreateInfo descriptorSetLayoutCI{};
     descriptorSetLayoutCI.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
@@ -612,8 +624,10 @@ void Renderer::createRayTracingPipeline() {
     std::array<VkPipelineShaderStageCreateInfo, SHADER_COUNT> shaderStages;
     std::array<VkShaderModule, SHADER_COUNT> shaderModules;
     shaderStages[INDEX_RAYGEN] = Vk::loadShader(device, std::string(_CONFIG::getAssetsPath()) + std::string(SHADER_SRC_RAYGEN), VK_SHADER_STAGE_RAYGEN_BIT_NV, shaderModules[INDEX_RAYGEN]);
-    shaderStages[INDEX_MISS] = Vk::loadShader(device, std::string(_CONFIG::getAssetsPath()) + std::string(SHADER_SRC_MISS), VK_SHADER_STAGE_MISS_BIT_NV, shaderModules[INDEX_MISS]);
+    shaderStages[INDEX_INTERSECTION] = Vk::loadShader(device, std::string(_CONFIG::getAssetsPath()) + std::string(SHADER_SRC_INTERSECTION), VK_SHADER_STAGE_INTERSECTION_BIT_NV, shaderModules[INDEX_INTERSECTION]);
+    //shaderStages[INDEX_ANY_HIT] = Vk::loadShader(device, std::string(_CONFIG::getAssetsPath()) + std::string(SHADER_SRC_ANY_HIT), VK_SHADER_STAGE_ANY_HIT_BIT_NV, shaderModules[INDEX_ANY_HIT]);
     shaderStages[INDEX_CLOSEST_HIT] = Vk::loadShader(device, std::string(_CONFIG::getAssetsPath()) + std::string(SHADER_SRC_CLOSEST_HIT), VK_SHADER_STAGE_CLOSEST_HIT_BIT_NV, shaderModules[INDEX_CLOSEST_HIT]);
+    shaderStages[INDEX_MISS] = Vk::loadShader(device, std::string(_CONFIG::getAssetsPath()) + std::string(SHADER_SRC_MISS), VK_SHADER_STAGE_MISS_BIT_NV, shaderModules[INDEX_MISS]);
 
     // ray tracing shader groups
     std::array<VkRayTracingShaderGroupCreateInfoNV, SHADER_COUNT> shaderGroups{};
@@ -627,11 +641,20 @@ void Renderer::createRayTracingPipeline() {
 
     shaderGroups[INDEX_RAYGEN].type = VK_RAY_TRACING_SHADER_GROUP_TYPE_GENERAL_NV;
     shaderGroups[INDEX_RAYGEN].generalShader = INDEX_RAYGEN;
+
+    shaderGroups[INDEX_INTERSECTION].type = VK_RAY_TRACING_SHADER_GROUP_TYPE_PROCEDURAL_HIT_GROUP_NV;
+    shaderGroups[INDEX_INTERSECTION].intersectionShader = INDEX_INTERSECTION;
+
+    //shaderGroups[INDEX_ANY_HIT].type = VK_RAY_TRACING_SHADER_GROUP_TYPE_PROCEDURAL_HIT_GROUP_NV;
+    //shaderGroups[INDEX_ANY_HIT].anyHitShader = INDEX_ANY_HIT;
+    //shaderGroups[INDEX_ANY_HIT].intersectionShader = INDEX_INTERSECTION;
+
+    shaderGroups[INDEX_CLOSEST_HIT].type = VK_RAY_TRACING_SHADER_GROUP_TYPE_PROCEDURAL_HIT_GROUP_NV;
+    shaderGroups[INDEX_CLOSEST_HIT].closestHitShader = INDEX_CLOSEST_HIT;
+    shaderGroups[INDEX_CLOSEST_HIT].intersectionShader = INDEX_INTERSECTION;
+
     shaderGroups[INDEX_MISS].type = VK_RAY_TRACING_SHADER_GROUP_TYPE_GENERAL_NV;
     shaderGroups[INDEX_MISS].generalShader = INDEX_MISS;
-    shaderGroups[INDEX_CLOSEST_HIT].type = VK_RAY_TRACING_SHADER_GROUP_TYPE_TRIANGLES_HIT_GROUP_NV;
-    shaderGroups[INDEX_CLOSEST_HIT].generalShader = VK_SHADER_UNUSED_NV;
-    shaderGroups[INDEX_CLOSEST_HIT].closestHitShader = INDEX_CLOSEST_HIT;
 
     VkRayTracingPipelineCreateInfoNV rayPipelineCI{};
     rayPipelineCI.sType = VK_STRUCTURE_TYPE_RAY_TRACING_PIPELINE_CREATE_INFO_NV;
@@ -647,11 +670,21 @@ void Renderer::createRayTracingPipeline() {
         vkDestroyShaderModule(device, shaderModule, VK_ALLOCATOR);
 }
 
+void Renderer::createShaderBindingTable() {
+    uint32_t sbtSize = rayTracingProperties.shaderGroupHandleSize * SHADER_COUNT;
+    uint8_t* shaderGroupHandleStorage = new uint8_t[sbtSize];
+    VK_CHECK_RESULT(vkGetRayTracingShaderGroupHandlesNV(device, pipeline, 0, SHADER_COUNT, sbtSize, shaderGroupHandleStorage), "failed to get ray tracing shader group handles");
+
+    createBuffer(shaderBindingTable, VK_BUFFER_USAGE_RAY_TRACING_BIT_NV | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT, sbtSize);
+    uploadBufferHostVisible(shaderBindingTable, shaderGroupHandleStorage, sbtSize);
+}
+
 void Renderer::createDescriptorSets() {
     std::vector<VkDescriptorPoolSize> poolSizes = {
         { VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_NV, 1 },
         { VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1 },
-        { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, 1 }
+        { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, 1 },
+        { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1 }
     };
 
     VkDescriptorPoolCreateInfo descriptorPoolCI{};
@@ -673,7 +706,7 @@ void Renderer::createDescriptorSets() {
     VkWriteDescriptorSetAccelerationStructureNV descriptorAccelerationStructureInfo{};
     descriptorAccelerationStructureInfo.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_NV;
     descriptorAccelerationStructureInfo.accelerationStructureCount = 1;
-    descriptorAccelerationStructureInfo.pAccelerationStructures = &topLevelAS.accelerationStructure;
+    descriptorAccelerationStructureInfo.pAccelerationStructures = &tlas.accelerationStructure;
 
     VkWriteDescriptorSet accelerationStructureWrite{};
     accelerationStructureWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
@@ -701,9 +734,9 @@ void Renderer::createDescriptorSets() {
     // ubo descriptor
 
     VkDescriptorBufferInfo uboDescriptor{};
-    uboDescriptor.buffer = uboBuffer.buffer;
+    uboDescriptor.buffer = bufferUBO.buffer;
     uboDescriptor.offset = 0;
-    uboDescriptor.range = uboBuffer.dynamicStride;
+    uboDescriptor.range = bufferUBO.dynamicStride;
 
     VkWriteDescriptorSet uniformBufferWrite{};
     uniformBufferWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
@@ -713,10 +746,26 @@ void Renderer::createDescriptorSets() {
     uniformBufferWrite.pBufferInfo = &uboDescriptor;
     uniformBufferWrite.dstBinding = 2;
 
+    // sphere aabbs ssbo
+
+    VkDescriptorBufferInfo spheresDescriptor{};
+    spheresDescriptor.buffer = bufferSpheres.buffer;
+    spheresDescriptor.offset = 0;
+    spheresDescriptor.range = bufferSpheres.size;
+
+    VkWriteDescriptorSet spheresWrite{};
+    spheresWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    spheresWrite.dstSet = descriptorSet;
+    spheresWrite.descriptorCount = 1;
+    spheresWrite.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    spheresWrite.pBufferInfo = &spheresDescriptor;
+    spheresWrite.dstBinding = 3;
+
     std::vector<VkWriteDescriptorSet> writeDescriptorSets = {
         accelerationStructureWrite,
         renderImageWrite,
-        uniformBufferWrite
+        uniformBufferWrite,
+        spheresWrite
     };
     vkUpdateDescriptorSets(device, static_cast<uint32_t>(writeDescriptorSets.size()), writeDescriptorSets.data(), 0, VK_NULL_HANDLE);
 }
@@ -737,8 +786,8 @@ void Renderer::createCommandBuffersRender() {
 
     // Calculate shader binding offsets, which is pretty straight forward in our example 
     VkDeviceSize bindingOffsetRayGenShader = rayTracingProperties.shaderGroupHandleSize * INDEX_RAYGEN;
-    VkDeviceSize bindingOffsetMissShader = rayTracingProperties.shaderGroupHandleSize * INDEX_MISS;
     VkDeviceSize bindingOffsetHitShader = rayTracingProperties.shaderGroupHandleSize * INDEX_CLOSEST_HIT;
+    VkDeviceSize bindingOffsetMissShader = rayTracingProperties.shaderGroupHandleSize * INDEX_MISS;
     VkDeviceSize bindingStride = rayTracingProperties.shaderGroupHandleSize;
 
     for (int i = 0; i < commandBuffersRender.size(); i++) {
@@ -747,7 +796,7 @@ void Renderer::createCommandBuffersRender() {
 
         // ray tracing dispath
 
-        uint32_t uboDynamicOffset = i * uboBuffer.dynamicStride;
+        uint32_t uboDynamicOffset = i * bufferUBO.dynamicStride;
 
         vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_RAY_TRACING_NV, pipeline);
         vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_RAY_TRACING_NV, pipelineLayout, 0, 1, &descriptorSet, 1, &uboDynamicOffset);
@@ -938,7 +987,7 @@ void Renderer::updateUniformBuffer(glm::mat4 viewInverse, glm::mat4 projInverse,
     uniformData.projInverse = projInverse;
     uniformData.cameraPos = cameraPos;
 
-    uploadBufferHostVisible(uboBuffer, &uniformData, sizeof(UniformData), static_cast<VkDeviceSize>(swapchainIndex) * uboBuffer.dynamicStride);
+    uploadBufferHostVisible(bufferUBO, &uniformData, sizeof(UniformData), static_cast<VkDeviceSize>(swapchainIndex) * bufferUBO.dynamicStride);
 }
 
 void Renderer::recreateSwapChain() {
@@ -984,15 +1033,14 @@ void Renderer::cleanUp() {
     vkDestroyPipelineLayout(device, pipelineLayout, VK_ALLOCATOR);
     vkDestroyDescriptorSetLayout(device, descriptorSetLayout, VK_ALLOCATOR);
 
-    vkFreeMemory(device, bottomLevelAS.memory, VK_ALLOCATOR);
-    vkFreeMemory(device, topLevelAS.memory, VK_ALLOCATOR);
+    vkFreeMemory(device, blasSphere.memory, VK_ALLOCATOR);
+    vkFreeMemory(device, tlas.memory, VK_ALLOCATOR);
 
-    vkDestroyAccelerationStructureNV(device, bottomLevelAS.accelerationStructure, nullptr);
-    vkDestroyAccelerationStructureNV(device, topLevelAS.accelerationStructure, nullptr);
+    vkDestroyAccelerationStructureNV(device, blasSphere.accelerationStructure, nullptr);
+    vkDestroyAccelerationStructureNV(device, tlas.accelerationStructure, nullptr);
 
-    destroyBuffer(indexBuffer);
-    destroyBuffer(vertexBuffer);
-    destroyBuffer(uboBuffer);
+    destroyBuffer(bufferSpheres);
+    destroyBuffer(bufferUBO);
     destroyBuffer(shaderBindingTable);
 
     cleanupSwapChain();

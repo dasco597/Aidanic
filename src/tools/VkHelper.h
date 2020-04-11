@@ -1,35 +1,32 @@
 #pragma once
 
 #include "tools/Log.h"
+#include "Models.h"
 
 #include <glm.hpp>
 #include <vulkan/vulkan.h>
 #include <vulkan/vulkan_core.h>
 
+#include <string>
 #include <vector>
 #include <optional>
 
-// todo remove references from vk objects
+namespace Vk {
+    std::string _errorString(VkResult res);
+}
 
 // Check vulkan result macro
-#define VK_CHECK_RESULT(result, ...) if (result != VK_SUCCESS) { AID_TRACE("vkResult = {}", result); AID_ERROR(__VA_ARGS__); }
+#define VK_CHECK_RESULT(result, ...) if (result != VK_SUCCESS) { AID_TRACE("VkResult = {}", Vk::_errorString(result)); AID_ERROR(__VA_ARGS__); }
 
 #define DEFAULT_FENCE_TIMEOUT 100000000000
 #define VK_ALLOCATOR nullptr
 
-struct Vertex { glm::vec3 pos; };
-struct Model {
-    std::vector<Vertex> vertices;
-    std::vector<uint32_t> indices;
-};
-
 namespace Vk {
     struct QueueFamilyIndices {
-        std::optional<uint32_t> graphicsFamily;
-        std::optional<uint32_t> presentFamily;
+        std::optional<uint32_t> graphicsFamily, computeFamily, presentFamily;
 
         bool isComplete() {
-            return graphicsFamily.has_value() && presentFamily.has_value();
+            return graphicsFamily.has_value() && computeFamily.has_value() && presentFamily.has_value();
         }
     };
 
@@ -71,6 +68,17 @@ namespace Vk {
         uint64_t accelerationStructureHandle;
     };
 
+    struct AABB {
+        float aabb_minx;
+        float aabb_miny;
+        float aabb_minz;
+        float aabb_maxx;
+        float aabb_maxy;
+        float aabb_maxz;
+
+        void init(Models::Sphere sphere);
+    };
+
     SwapChainSupportDetails querySwapChainSupport(VkPhysicalDevice device, VkSurfaceKHR surface);
     QueueFamilyIndices findQueueFamilies(VkPhysicalDevice device, VkSurfaceKHR surface);
     uint32_t findMemoryType(VkPhysicalDevice physicalDevice, uint32_t typeFilter, VkMemoryPropertyFlags properties);
@@ -81,4 +89,4 @@ namespace Vk {
     std::vector<char> readFile(const std::string filename);
     VkPipelineShaderStageCreateInfo loadShader(VkDevice device, const std::string filename, VkShaderStageFlagBits stage, VkShaderModule& shaderModuleWriteOut);
     VkShaderModule createShaderModule(VkDevice device, const std::vector<char>& code);
-};
+}
