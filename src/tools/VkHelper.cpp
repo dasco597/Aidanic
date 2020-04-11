@@ -1,4 +1,5 @@
 #include "VkHelper.h"
+#include <vulkan/vulkan_core.h>
 
 #include <iostream>
 #include <fstream>

@@ -9,7 +9,7 @@ struct Sphere {
 	float aabb_maxy;
 	float aabb_maxz;
 };
-layout(set = 0, binding = 3, std430) readonly buffer Spheres { Sphere spheres[]; };
+layout(set = 1, binding = 1, std430) readonly buffer Spheres { Sphere spheres[]; };
 
 hitAttributeNV vec3 normal;
 

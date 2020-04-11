@@ -32,7 +32,7 @@ enum {
 
 // INITIALIZATION
 
-void Renderer::init(Aidanic* app, std::vector<const char*>& requiredExtensions, std::vector<Models::Sphere>& spheres, glm::mat4 viewInverse, glm::mat4 projInverse, glm::vec3 cameraPos) {
+void Renderer::init(Aidanic* app, std::vector<const char*>& requiredExtensions, glm::mat4 viewInverse, glm::mat4 projInverse, glm::vec3 cameraPos) {
     AID_INFO("Initializing vulkan renderer...");
     this->aidanicApp = app;
 
@@ -46,16 +46,15 @@ void Renderer::init(Aidanic* app, std::vector<const char*>& requiredExtensions, 
     createCommandPool();
     createSyncObjects();
 
-    uniformData.viewInverse = viewInverse;
-    uniformData.projInverse = projInverse;
-    uniformData.cameraPos = glm::vec4(cameraPos, 1.f);
-
     createRenderImage();
-    createScene(spheres);
+    createDescriptorSetLayouts();
+    initPerFrameRenderResources();
+    createUBO(viewInverse, projInverse, cameraPos);
 
     createRayTracingPipeline();
     createShaderBindingTable();
-    createDescriptorSets();
+    createDescriptorSetRender();
+
     createCommandBuffersRender();
     createCommandBuffersImageCopy();
 }
@@ -268,29 +267,6 @@ void Renderer::createCommandPool() {
     VK_CHECK_RESULT(vkCreateCommandPool(device, &poolInfo, nullptr, &commandPool), "failed to create graphics command pool!");
 }
 
-void Renderer::createImageViews() {
-    swapchain.imageViews.resize(swapchain.numImages);
-
-    for (size_t i = 0; i < swapchain.numImages; i++) {
-        VkImageViewCreateInfo createInfo = {};
-        createInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-        createInfo.image = swapchain.images[i];
-        createInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
-        createInfo.format = swapchain.format;
-        createInfo.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
-        createInfo.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
-        createInfo.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
-        createInfo.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
-        createInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-        createInfo.subresourceRange.baseMipLevel = 0;
-        createInfo.subresourceRange.levelCount = 1;
-        createInfo.subresourceRange.baseArrayLayer = 0;
-        createInfo.subresourceRange.layerCount = 1;
-
-        VK_CHECK_RESULT(vkCreateImageView(device, &createInfo, nullptr, &swapchain.imageViews[i]), "failed to create image views!");
-    }
-}
-
 void Renderer::createSyncObjects() {
     semaphoresImageAvailable.resize(_MAX_FRAMES_IN_FLIGHT);
     semaphoresRenderFinished.resize(_MAX_FRAMES_IN_FLIGHT);
@@ -316,221 +292,6 @@ void Renderer::createSyncObjects() {
             throw std::runtime_error("failed to create synchronization objects for a frame!");
         }
     }
-}
-
-void Renderer::createScene(std::vector<Models::Sphere>& spheres) {
-    // create sphere AABBs
-
-    sphereAABBs.resize(spheres.size());
-    for (int s = 0; s < spheres.size(); s++) sphereAABBs[s].init(spheres[s]);
-
-    // create buffers
-
-    if (sizeof(Vk::AABB) % 8 != 0) {
-        AID_ERROR("Vk::AABB size not a multiple of 8bytes -> add padding to struct or aabb buffer");
-    }
-    createBuffer(bufferSpheres, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, sizeof(Vk::AABB) * sphereAABBs.size());
-    uploadBufferDeviceLocal(bufferSpheres, sphereAABBs.data(), sizeof(Vk::AABB) * sphereAABBs.size());
-
-    bufferUBO.dynamicStride = getUBOOffsetAligned(sizeof(UniformData));
-    createBuffer(bufferUBO, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT, static_cast<VkDeviceSize>(swapchain.numImages) * bufferUBO.dynamicStride);
-    for (int i = 0; i < swapchain.numImages; i++) {
-        uploadBufferHostVisible(bufferUBO, &uniformData, sizeof(UniformData), static_cast<VkDeviceSize>(i) * bufferUBO.dynamicStride);
-    }
-
-    // create a bottom-level acceleration structure containing the scene geometry
-
-    VkGeometryAABBNV geometryAabbSphere = {};
-    geometryAabbSphere.sType = VK_STRUCTURE_TYPE_GEOMETRY_AABB_NV;
-    geometryAabbSphere.aabbData = bufferSpheres.buffer;
-    geometryAabbSphere.numAABBs = sphereAABBs.size();
-    geometryAabbSphere.stride = sizeof(Vk::AABB);
-    geometryAabbSphere.offset = 0;
-
-    VkGeometryNV geometrySphere{};
-    geometrySphere.sType = VK_STRUCTURE_TYPE_GEOMETRY_NV;
-    geometrySphere.flags = VK_GEOMETRY_OPAQUE_BIT_NV;
-    geometrySphere.geometryType = VK_GEOMETRY_TYPE_AABBS_NV;
-    geometrySphere.geometry.aabbs = geometryAabbSphere;
-
-    geometrySphere.geometry.triangles.sType = VK_STRUCTURE_TYPE_GEOMETRY_TRIANGLES_NV;
-    geometrySphere.geometry.triangles.vertexData = VK_NULL_HANDLE;
-    geometrySphere.geometry.triangles.vertexCount = 0;
-    geometrySphere.geometry.triangles.vertexOffset = 0;
-    geometrySphere.geometry.triangles.vertexFormat = VK_FORMAT_R32G32B32_SFLOAT;
-    geometrySphere.geometry.triangles.indexData = VK_NULL_HANDLE;
-    geometrySphere.geometry.triangles.indexCount = 0;
-    geometrySphere.geometry.triangles.indexOffset = 0;
-    geometrySphere.geometry.triangles.indexType = VK_INDEX_TYPE_NONE_NV;
-    geometrySphere.geometry.triangles.transformData = VK_NULL_HANDLE;
-    geometrySphere.geometry.triangles.transformOffset = 0;
-
-    createBottomLevelAccelerationStructure(blasSphere, &geometrySphere, 1);
-
-    // create the top-level acceleration structure containing BLAS instance information
-
-    glm::mat3x4 transform = {
-        1.0f, 0.0f, 0.0f, 0.0f,
-        0.0f, 1.0f, 0.0f, 0.0f,
-        0.0f, 0.0f, 1.0f, 0.0f
-    };
-
-    Vk::BLASInstance geometryInstance{};
-    geometryInstance.transform = transform;
-    geometryInstance.instanceId = 0;
-    geometryInstance.mask = 0xff;
-    geometryInstance.instanceOffset = 0;
-    geometryInstance.flags = VK_GEOMETRY_INSTANCE_TRIANGLE_CULL_DISABLE_BIT_NV;
-    geometryInstance.accelerationStructureHandle = blasSphere.handle;
-
-    Vk::Buffer instanceBuffer;
-    createBuffer(instanceBuffer, VK_BUFFER_USAGE_RAY_TRACING_BIT_NV, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT, sizeof(Vk::BLASInstance));
-    uploadBufferHostVisible(instanceBuffer, &geometryInstance, sizeof(Vk::BLASInstance));
-
-    createTopLevelAccelerationStructure();
-
-    // acceleration structure building requires some scratch space to store temporary information
-
-    VkAccelerationStructureMemoryRequirementsInfoNV memoryRequirementsInfo{};
-    memoryRequirementsInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_MEMORY_REQUIREMENTS_INFO_NV;
-    memoryRequirementsInfo.type = VK_ACCELERATION_STRUCTURE_MEMORY_REQUIREMENTS_TYPE_BUILD_SCRATCH_NV;
-
-    VkMemoryRequirements2 memReqBottomLevelAS;
-    memoryRequirementsInfo.accelerationStructure = blasSphere.accelerationStructure;
-    vkGetAccelerationStructureMemoryRequirementsNV(device, &memoryRequirementsInfo, &memReqBottomLevelAS);
-
-    VkMemoryRequirements2 memReqTopLevelAS;
-    memoryRequirementsInfo.accelerationStructure = tlas.accelerationStructure;
-    vkGetAccelerationStructureMemoryRequirementsNV(device, &memoryRequirementsInfo, &memReqTopLevelAS);
-
-    const VkDeviceSize scratchBufferSize = std::max(memReqBottomLevelAS.memoryRequirements.size, memReqTopLevelAS.memoryRequirements.size);
-
-    Vk::Buffer scratchBuffer;
-    createBuffer(scratchBuffer, VK_BUFFER_USAGE_RAY_TRACING_BIT_NV, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, scratchBufferSize);
-
-    VkCommandBuffer cmdBuffer = Vk::beginSingleTimeCommands(device, commandPool);
-
-    // build bottom-level acceleration structure
-
-    VkAccelerationStructureInfoNV buildInfo{};
-    buildInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_INFO_NV;
-    buildInfo.type = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_NV;
-    buildInfo.instanceCount = 0;
-    buildInfo.geometryCount = 1;
-    buildInfo.pGeometries = &geometrySphere;
-
-    vkCmdBuildAccelerationStructureNV(
-        cmdBuffer,
-        &buildInfo,
-        VK_NULL_HANDLE,
-        0,
-        VK_FALSE,
-        blasSphere.accelerationStructure,
-        VK_NULL_HANDLE,
-        scratchBuffer.buffer,
-        0);
-
-    VkMemoryBarrier memoryBarrier{};
-    memoryBarrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
-    memoryBarrier.srcAccessMask = VK_ACCESS_ACCELERATION_STRUCTURE_WRITE_BIT_NV | VK_ACCESS_ACCELERATION_STRUCTURE_READ_BIT_NV;
-    memoryBarrier.dstAccessMask = VK_ACCESS_ACCELERATION_STRUCTURE_WRITE_BIT_NV | VK_ACCESS_ACCELERATION_STRUCTURE_READ_BIT_NV;
-    vkCmdPipelineBarrier(cmdBuffer, VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_NV, VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_NV, 0, 1, &memoryBarrier, 0, 0, 0, 0);
-
-    // build top-level acceleration structure
-
-    buildInfo.type = VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_NV;
-    buildInfo.pGeometries = 0;
-    buildInfo.geometryCount = 0;
-    buildInfo.instanceCount = 1;
-
-    vkCmdBuildAccelerationStructureNV(
-        cmdBuffer,
-        &buildInfo,
-        instanceBuffer.buffer,
-        0,
-        VK_FALSE,
-        tlas.accelerationStructure,
-        VK_NULL_HANDLE,
-        scratchBuffer.buffer,
-        0);
-
-    vkCmdPipelineBarrier(cmdBuffer, VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_NV, VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_NV, 0, 1, &memoryBarrier, 0, 0, 0, 0);
-
-    Vk::endSingleTimeCommands(device, cmdBuffer, queues.compute, commandPool);
-
-    destroyBuffer(instanceBuffer);
-    destroyBuffer(scratchBuffer);
-}
-
-void Renderer::createBottomLevelAccelerationStructure(Vk::AccelerationStructure& blas, const VkGeometryNV* geometries, uint32_t geometryCount) {
-    VkAccelerationStructureInfoNV accelerationStructureInfo{};
-    accelerationStructureInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_INFO_NV;
-    accelerationStructureInfo.type = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_NV;
-    accelerationStructureInfo.instanceCount = 0;
-    accelerationStructureInfo.geometryCount = geometryCount;
-    accelerationStructureInfo.pGeometries = geometries;
-
-    VkAccelerationStructureCreateInfoNV accelerationStructureCI{};
-    accelerationStructureCI.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_NV;
-    accelerationStructureCI.info = accelerationStructureInfo;
-    VK_CHECK_RESULT(vkCreateAccelerationStructureNV(device, &accelerationStructureCI, VK_ALLOCATOR, &blas.accelerationStructure), "failed to create bottom level acceleration structure");
-
-    VkAccelerationStructureMemoryRequirementsInfoNV memoryRequirementsInfo{};
-    memoryRequirementsInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_MEMORY_REQUIREMENTS_INFO_NV;
-    memoryRequirementsInfo.type = VK_ACCELERATION_STRUCTURE_MEMORY_REQUIREMENTS_TYPE_OBJECT_NV;
-    memoryRequirementsInfo.accelerationStructure = blas.accelerationStructure;
-
-    VkMemoryRequirements2 memoryRequirements{};
-    vkGetAccelerationStructureMemoryRequirementsNV(device, &memoryRequirementsInfo, &memoryRequirements);
-
-    VkMemoryAllocateInfo memoryAllocateInfo{};
-    memoryAllocateInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-    memoryAllocateInfo.allocationSize = memoryRequirements.memoryRequirements.size;
-    memoryAllocateInfo.memoryTypeIndex = Vk::findMemoryType(physicalDevice, memoryRequirements.memoryRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-    VK_CHECK_RESULT(vkAllocateMemory(device, &memoryAllocateInfo, VK_ALLOCATOR, &blas.memory), "failed to allocate bottom level acceleration structure memory");
-
-    VkBindAccelerationStructureMemoryInfoNV accelerationStructureMemoryInfo{};
-    accelerationStructureMemoryInfo.sType = VK_STRUCTURE_TYPE_BIND_ACCELERATION_STRUCTURE_MEMORY_INFO_NV;
-    accelerationStructureMemoryInfo.accelerationStructure = blas.accelerationStructure;
-    accelerationStructureMemoryInfo.memory = blas.memory;
-    VK_CHECK_RESULT(vkBindAccelerationStructureMemoryNV(device, 1, &accelerationStructureMemoryInfo), "failed to bind acceleration structure memory");
-
-    VK_CHECK_RESULT(vkGetAccelerationStructureHandleNV(device, blas.accelerationStructure, sizeof(uint64_t), &blas.handle), "failed to get bottom level acceleration structure handle");
-}
-
-void Renderer::createTopLevelAccelerationStructure() {
-    VkAccelerationStructureInfoNV accelerationStructureInfo{};
-    accelerationStructureInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_INFO_NV;
-    accelerationStructureInfo.type = VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_NV;
-    accelerationStructureInfo.instanceCount = 1;
-    accelerationStructureInfo.geometryCount = 0;
-
-    VkAccelerationStructureCreateInfoNV accelerationStructureCI{};
-    accelerationStructureCI.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_NV;
-    accelerationStructureCI.info = accelerationStructureInfo;
-    VK_CHECK_RESULT(vkCreateAccelerationStructureNV(device, &accelerationStructureCI, VK_ALLOCATOR, &tlas.accelerationStructure), "failed to create top level acceleration stucture");
-
-    VkAccelerationStructureMemoryRequirementsInfoNV memoryRequirementsInfo{};
-    memoryRequirementsInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_MEMORY_REQUIREMENTS_INFO_NV;
-    memoryRequirementsInfo.type = VK_ACCELERATION_STRUCTURE_MEMORY_REQUIREMENTS_TYPE_OBJECT_NV;
-    memoryRequirementsInfo.accelerationStructure = tlas.accelerationStructure;
-
-    VkMemoryRequirements2 memoryRequirements{};
-    vkGetAccelerationStructureMemoryRequirementsNV(device, &memoryRequirementsInfo, &memoryRequirements);
-
-    VkMemoryAllocateInfo memoryAllocateInfo{};
-    memoryAllocateInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-    memoryAllocateInfo.allocationSize = memoryRequirements.memoryRequirements.size;
-    memoryAllocateInfo.memoryTypeIndex = Vk::findMemoryType(physicalDevice, memoryRequirements.memoryRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-    VK_CHECK_RESULT(vkAllocateMemory(device, &memoryAllocateInfo, VK_ALLOCATOR, &tlas.memory), "failed to allocate top level acceleration structure memory");
-
-    VkBindAccelerationStructureMemoryInfoNV accelerationStructureMemoryInfo{};
-    accelerationStructureMemoryInfo.sType = VK_STRUCTURE_TYPE_BIND_ACCELERATION_STRUCTURE_MEMORY_INFO_NV;
-    accelerationStructureMemoryInfo.accelerationStructure = tlas.accelerationStructure;
-    accelerationStructureMemoryInfo.memory = tlas.memory;
-    VK_CHECK_RESULT(vkBindAccelerationStructureMemoryNV(device, 1, &accelerationStructureMemoryInfo), "failed to bind acceleration structure memory");
-
-    VK_CHECK_RESULT(vkGetAccelerationStructureHandleNV(device, tlas.accelerationStructure, sizeof(uint64_t), &tlas.handle), "failed to get top level acceleration structure handle");
 }
 
 void Renderer::createRenderImage() {
@@ -579,47 +340,108 @@ void Renderer::createRenderImage() {
     Vk::endSingleTimeCommands(device, cmdBuffer, queues.graphics, commandPool);
 }
 
+void Renderer::initPerFrameRenderResources() {
+    perFrameRenderResources.resize(swapchain.numImages);
+
+    // create descriptor pool
+
+    std::vector<VkDescriptorPoolSize> poolSizes = {
+        { VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_NV, static_cast<uint32_t>(perFrameRenderResources.size()) },
+        { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, static_cast<uint32_t>(perFrameRenderResources.size()) }
+    };
+
+    VkDescriptorPoolCreateInfo descriptorPoolCI{};
+    descriptorPoolCI.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+    descriptorPoolCI.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
+    descriptorPoolCI.pPoolSizes = poolSizes.data();
+    descriptorPoolCI.maxSets = static_cast<uint32_t>(perFrameRenderResources.size());
+    VK_CHECK_RESULT(vkCreateDescriptorPool(device, &descriptorPoolCI, VK_ALLOCATOR, &descriptorPoolModels), "failed to create descriptor pool");
+
+    for (int i = 0; i < perFrameRenderResources.size(); i++) {
+        // create tlas
+
+        updateModelTLAS(i);
+
+        // init spheres buffer
+
+        createBuffer(perFrameRenderResources[i].bufferSpheres, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, sizeof(Vk::AABB));
+
+        // create descriptor set
+
+        VkDescriptorSetAllocateInfo descriptorSetAllocateInfo{};
+        descriptorSetAllocateInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+        descriptorSetAllocateInfo.descriptorPool = descriptorPoolModels;
+        descriptorSetAllocateInfo.descriptorSetCount = 1;
+        descriptorSetAllocateInfo.pSetLayouts = &descriptorSetLayoutModels;
+        vkAllocateDescriptorSets(device, &descriptorSetAllocateInfo, &perFrameRenderResources[i].descriptorSetModels);
+        
+        updateModelDescriptorSet(i);
+    }
+}
+
+void Renderer::createUBO(glm::mat4 viewInverse, glm::mat4 projInverse, glm::vec3 cameraPos) {
+    bufferUBO.dynamicStride = getUBOOffsetAligned(sizeof(UniformData));
+    createBuffer(bufferUBO, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT, static_cast<VkDeviceSize>(swapchain.numImages) * bufferUBO.dynamicStride);
+    for (int s = 0; s < swapchain.numImages; s++) updateUniformBuffer(viewInverse, projInverse, cameraPos, s);
+}
+
+void Renderer::createDescriptorSetLayouts() {
+    {
+        VkDescriptorSetLayoutBinding layoutBindingRenderImage{};
+        layoutBindingRenderImage.binding = 0;
+        layoutBindingRenderImage.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+        layoutBindingRenderImage.descriptorCount = 1;
+        layoutBindingRenderImage.stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_NV;
+
+        VkDescriptorSetLayoutBinding layoutBindingUniformBuffer{};
+        layoutBindingUniformBuffer.binding = 1;
+        layoutBindingUniformBuffer.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
+        layoutBindingUniformBuffer.descriptorCount = 1;
+        layoutBindingUniformBuffer.stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_NV;
+
+        std::vector<VkDescriptorSetLayoutBinding> bindings({
+            layoutBindingRenderImage,
+            layoutBindingUniformBuffer });
+
+        VkDescriptorSetLayoutCreateInfo descriptorSetLayoutCI{};
+        descriptorSetLayoutCI.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+        descriptorSetLayoutCI.bindingCount = static_cast<uint32_t>(bindings.size());
+        descriptorSetLayoutCI.pBindings = bindings.data();
+        VK_CHECK_RESULT(vkCreateDescriptorSetLayout(device, &descriptorSetLayoutCI, VK_ALLOCATOR, &descriptorSetLayoutRender), "failed to create descriptor set layout");
+    }
+
+    {
+        VkDescriptorSetLayoutBinding layoutBindingAccelerationStructure{};
+        layoutBindingAccelerationStructure.binding = 0;
+        layoutBindingAccelerationStructure.descriptorType = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_NV;
+        layoutBindingAccelerationStructure.descriptorCount = 1;
+        layoutBindingAccelerationStructure.stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_NV;
+
+        VkDescriptorSetLayoutBinding layoutBindingSpheresBuffer{};
+        layoutBindingSpheresBuffer.binding = 1;
+        layoutBindingSpheresBuffer.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        layoutBindingSpheresBuffer.descriptorCount = 1;
+        layoutBindingSpheresBuffer.stageFlags = VK_SHADER_STAGE_INTERSECTION_BIT_NV;
+
+        std::vector<VkDescriptorSetLayoutBinding> bindings({
+            layoutBindingAccelerationStructure,
+            layoutBindingSpheresBuffer });
+
+        VkDescriptorSetLayoutCreateInfo descriptorSetLayoutCI{};
+        descriptorSetLayoutCI.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+        descriptorSetLayoutCI.bindingCount = static_cast<uint32_t>(bindings.size());
+        descriptorSetLayoutCI.pBindings = bindings.data();
+        VK_CHECK_RESULT(vkCreateDescriptorSetLayout(device, &descriptorSetLayoutCI, VK_ALLOCATOR, &descriptorSetLayoutModels), "failed to create descriptor set layout");
+    }
+}
+
 void Renderer::createRayTracingPipeline() {
-    VkDescriptorSetLayoutBinding layoutBindingAccelerationStructure{};
-    layoutBindingAccelerationStructure.binding = 0;
-    layoutBindingAccelerationStructure.descriptorType = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_NV;
-    layoutBindingAccelerationStructure.descriptorCount = 1;
-    layoutBindingAccelerationStructure.stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_NV;
-
-    VkDescriptorSetLayoutBinding layoutBindingRenderImage{};
-    layoutBindingRenderImage.binding = 1;
-    layoutBindingRenderImage.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-    layoutBindingRenderImage.descriptorCount = 1;
-    layoutBindingRenderImage.stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_NV;
-
-    VkDescriptorSetLayoutBinding layoutBindingUniformBuffer{};
-    layoutBindingUniformBuffer.binding = 2;
-    layoutBindingUniformBuffer.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
-    layoutBindingUniformBuffer.descriptorCount = 1;
-    layoutBindingUniformBuffer.stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_NV;
-
-    VkDescriptorSetLayoutBinding layoutBindingSpheresBuffer{};
-    layoutBindingSpheresBuffer.binding = 3;
-    layoutBindingSpheresBuffer.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    layoutBindingSpheresBuffer.descriptorCount = 1;
-    layoutBindingSpheresBuffer.stageFlags = VK_SHADER_STAGE_INTERSECTION_BIT_NV;
-
-    std::vector<VkDescriptorSetLayoutBinding> bindings({
-        layoutBindingAccelerationStructure,
-        layoutBindingRenderImage,
-        layoutBindingUniformBuffer,
-        layoutBindingSpheresBuffer });
-
-    VkDescriptorSetLayoutCreateInfo descriptorSetLayoutCI{};
-    descriptorSetLayoutCI.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-    descriptorSetLayoutCI.bindingCount = static_cast<uint32_t>(bindings.size());
-    descriptorSetLayoutCI.pBindings = bindings.data();
-    VK_CHECK_RESULT(vkCreateDescriptorSetLayout(device, &descriptorSetLayoutCI, VK_ALLOCATOR, &descriptorSetLayout), "failed to create descriptor set layout");
+    VkDescriptorSetLayout descriptorLayouts[] = { descriptorSetLayoutRender, descriptorSetLayoutModels };
 
     VkPipelineLayoutCreateInfo pipelineLayoutCI{};
     pipelineLayoutCI.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    pipelineLayoutCI.setLayoutCount = 1;
-    pipelineLayoutCI.pSetLayouts = &descriptorSetLayout;
+    pipelineLayoutCI.setLayoutCount = 2;
+    pipelineLayoutCI.pSetLayouts = descriptorLayouts;
     vkCreatePipelineLayout(device, &pipelineLayoutCI, VK_ALLOCATOR, &pipelineLayout);
 
     std::array<VkPipelineShaderStageCreateInfo, SHADER_COUNT> shaderStages;
@@ -680,12 +502,10 @@ void Renderer::createShaderBindingTable() {
     uploadBufferHostVisible(shaderBindingTable, shaderGroupHandleStorage, sbtSize);
 }
 
-void Renderer::createDescriptorSets() {
+void Renderer::createDescriptorSetRender() {
     std::vector<VkDescriptorPoolSize> poolSizes = {
-        { VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_NV, 1 },
         { VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1 },
-        { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, 1 },
-        { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1 }
+        { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, 1 }
     };
 
     VkDescriptorPoolCreateInfo descriptorPoolCI{};
@@ -693,30 +513,14 @@ void Renderer::createDescriptorSets() {
     descriptorPoolCI.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
     descriptorPoolCI.pPoolSizes = poolSizes.data();
     descriptorPoolCI.maxSets = 1;
-    VK_CHECK_RESULT(vkCreateDescriptorPool(device, &descriptorPoolCI, VK_ALLOCATOR, &descriptorPool), "failed to create descriptor pool");
+    VK_CHECK_RESULT(vkCreateDescriptorPool(device, &descriptorPoolCI, VK_ALLOCATOR, &descriptorPoolRender), "failed to create descriptor pool");
 
     VkDescriptorSetAllocateInfo descriptorSetAllocateInfo{};
     descriptorSetAllocateInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-    descriptorSetAllocateInfo.descriptorPool = descriptorPool;
+    descriptorSetAllocateInfo.descriptorPool = descriptorPoolRender;
     descriptorSetAllocateInfo.descriptorSetCount = 1;
-    descriptorSetAllocateInfo.pSetLayouts = &descriptorSetLayout;
-    vkAllocateDescriptorSets(device, &descriptorSetAllocateInfo, &descriptorSet);
-
-    // acceleration structure descriptor
-
-    VkWriteDescriptorSetAccelerationStructureNV descriptorAccelerationStructureInfo{};
-    descriptorAccelerationStructureInfo.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_NV;
-    descriptorAccelerationStructureInfo.accelerationStructureCount = 1;
-    descriptorAccelerationStructureInfo.pAccelerationStructures = &tlas.accelerationStructure;
-
-    VkWriteDescriptorSet accelerationStructureWrite{};
-    accelerationStructureWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    // The specialized acceleration structure descriptor has to be chained
-    accelerationStructureWrite.pNext = &descriptorAccelerationStructureInfo;
-    accelerationStructureWrite.dstSet = descriptorSet;
-    accelerationStructureWrite.descriptorCount = 1;
-    accelerationStructureWrite.descriptorType = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_NV;
-    accelerationStructureWrite.dstBinding = 0;
+    descriptorSetAllocateInfo.pSetLayouts = &descriptorSetLayoutRender;
+    vkAllocateDescriptorSets(device, &descriptorSetAllocateInfo, &descriptorSetRender);
 
     // render image descriptor
 
@@ -726,11 +530,11 @@ void Renderer::createDescriptorSets() {
 
     VkWriteDescriptorSet renderImageWrite{};
     renderImageWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    renderImageWrite.dstSet = descriptorSet;
+    renderImageWrite.dstSet = descriptorSetRender;
     renderImageWrite.descriptorCount = 1;
     renderImageWrite.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
     renderImageWrite.pImageInfo = &renderImageDescriptor;
-    renderImageWrite.dstBinding = 1;
+    renderImageWrite.dstBinding = 0;
 
     // ubo descriptor
 
@@ -741,38 +545,22 @@ void Renderer::createDescriptorSets() {
 
     VkWriteDescriptorSet uniformBufferWrite{};
     uniformBufferWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    uniformBufferWrite.dstSet = descriptorSet;
+    uniformBufferWrite.dstSet = descriptorSetRender;
     uniformBufferWrite.descriptorCount = 1;
     uniformBufferWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
     uniformBufferWrite.pBufferInfo = &uboDescriptor;
-    uniformBufferWrite.dstBinding = 2;
-
-    // sphere aabbs ssbo
-
-    VkDescriptorBufferInfo spheresDescriptor{};
-    spheresDescriptor.buffer = bufferSpheres.buffer;
-    spheresDescriptor.offset = 0;
-    spheresDescriptor.range = bufferSpheres.size;
-
-    VkWriteDescriptorSet spheresWrite{};
-    spheresWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    spheresWrite.dstSet = descriptorSet;
-    spheresWrite.descriptorCount = 1;
-    spheresWrite.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    spheresWrite.pBufferInfo = &spheresDescriptor;
-    spheresWrite.dstBinding = 3;
+    uniformBufferWrite.dstBinding = 1;
 
     std::vector<VkWriteDescriptorSet> writeDescriptorSets = {
-        accelerationStructureWrite,
         renderImageWrite,
-        uniformBufferWrite,
-        spheresWrite
+        uniformBufferWrite
     };
     vkUpdateDescriptorSets(device, static_cast<uint32_t>(writeDescriptorSets.size()), writeDescriptorSets.data(), 0, VK_NULL_HANDLE);
 }
 
 void Renderer::createCommandBuffersRender() {
     commandBuffersRender.resize(swapchain.numImages);
+
     VkCommandBufferAllocateInfo allocInfo{};
     allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
     allocInfo.commandBufferCount = commandBuffersRender.size();
@@ -780,37 +568,7 @@ void Renderer::createCommandBuffersRender() {
     allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
     vkAllocateCommandBuffers(device, &allocInfo, commandBuffersRender.data());
 
-    // begin info
-    VkCommandBufferBeginInfo beginInfo{};
-    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-    VkImageSubresourceRange subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
-
-    // Calculate shader binding offsets, which is pretty straight forward in our example 
-    VkDeviceSize bindingOffsetRayGenShader = rayTracingProperties.shaderGroupHandleSize * INDEX_RAYGEN;
-    VkDeviceSize bindingOffsetHitShader = rayTracingProperties.shaderGroupHandleSize * INDEX_CLOSEST_HIT;
-    VkDeviceSize bindingOffsetMissShader = rayTracingProperties.shaderGroupHandleSize * INDEX_MISS;
-    VkDeviceSize bindingStride = rayTracingProperties.shaderGroupHandleSize;
-
-    for (int i = 0; i < commandBuffersRender.size(); i++) {
-        VkCommandBuffer& commandBuffer = commandBuffersRender[i];
-        VK_CHECK_RESULT(vkBeginCommandBuffer(commandBuffer, &beginInfo), "failed to begin command buffer");
-
-        // ray tracing dispath
-
-        uint32_t uboDynamicOffset = i * bufferUBO.dynamicStride;
-
-        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_RAY_TRACING_NV, pipeline);
-        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_RAY_TRACING_NV, pipelineLayout, 0, 1, &descriptorSet, 1, &uboDynamicOffset);
-
-        vkCmdTraceRaysNV(commandBuffer,
-            shaderBindingTable.buffer, bindingOffsetRayGenShader,
-            shaderBindingTable.buffer, bindingOffsetMissShader, bindingStride,
-            shaderBindingTable.buffer, bindingOffsetHitShader, bindingStride,
-            VK_NULL_HANDLE, 0, 0,
-            swapchain.extent.width, swapchain.extent.height, 1);
-
-        VK_CHECK_RESULT(vkEndCommandBuffer(commandBuffer), "failed to end rendering command buffer {}", i);
-    }
+    for (int i = 0; i < commandBuffersRender.size(); i++)  recordCommandBufferRender(i);
 }
 
 void Renderer::createCommandBuffersImageCopy() {
@@ -890,7 +648,8 @@ void Renderer::drawFrame(bool framebufferResized, glm::mat4 viewInverse, glm::ma
         AID_ERROR("failed to acquire swap chain image!");
     }
 
-    updateUniformBuffer(viewInverse, projInverse, glm::vec4(cameraPos, 1.f), imageIndex);
+    updateModels(imageIndex);
+    updateUniformBuffer(viewInverse, projInverse, cameraPos, imageIndex);
 
     if (imagesInFlight[imageIndex] != VK_NULL_HANDLE) {
         vkWaitForFences(device, 1, &imagesInFlight[imageIndex], VK_TRUE, DEFAULT_FENCE_TIMEOUT);
@@ -985,10 +744,161 @@ void Renderer::drawFrame(bool framebufferResized, glm::mat4 viewInverse, glm::ma
     currentFrame = (currentFrame + 1) % _MAX_FRAMES_IN_FLIGHT;
 }
 
-void Renderer::updateUniformBuffer(glm::mat4 viewInverse, glm::mat4 projInverse, glm::vec4 cameraPos, uint32_t swapchainIndex) {
+void Renderer::addSpheres(std::vector<Models::Sphere>& spheres) {
+    // add AABBs
+
+    //sphereAABBs.resize(spheres.size());
+    //for (int s = 0; s < spheres.size(); s++) sphereAABBs[s].init(spheres[s]);
+
+    // add BLASs
+}
+
+void Renderer::updateModels(uint32_t swapchainIndex) {
+    PerFrameRenderResources& resources = perFrameRenderResources[swapchainIndex];
+    if (!resources.updateSpheres) return;
+
+    vkFreeMemory(device, resources.tlas.memory, VK_ALLOCATOR);
+    vkDestroyAccelerationStructureNV(device, resources.tlas.accelerationStructure, nullptr);
+    updateModelTLAS(swapchainIndex);
+
+    updateModelDescriptorSet(swapchainIndex);
+
+    recordCommandBufferRender(swapchainIndex);
+
+    resources.updateSpheres = false;
+}
+
+void Renderer::updateModelTLAS(uint32_t swapchainIndex) {
+    Vk::AccelerationStructure& tlas = perFrameRenderResources[swapchainIndex].tlas;
+
+    Vk::Buffer instanceBuffer;
+
+    if (sphereInstances.size() != 0) {
+        createBuffer(instanceBuffer, VK_BUFFER_USAGE_RAY_TRACING_BIT_NV, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT, sizeof(Vk::BLASInstance) * sphereInstances.size());
+        uploadBufferHostVisible(instanceBuffer, sphereInstances.data(), sizeof(Vk::BLASInstance) * sphereInstances.size());
+    }
+
+    // create top-level acceleration structure
+    createTopLevelAccelerationStructure(tlas, 0);
+
+    // acceleration structure building requires some scratch space to store temporary information
+
+    VkAccelerationStructureMemoryRequirementsInfoNV memoryRequirementsInfo{};
+    memoryRequirementsInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_MEMORY_REQUIREMENTS_INFO_NV;
+    memoryRequirementsInfo.type = VK_ACCELERATION_STRUCTURE_MEMORY_REQUIREMENTS_TYPE_BUILD_SCRATCH_NV;
+
+    VkMemoryRequirements2 memReqTopLevelAS;
+    memoryRequirementsInfo.accelerationStructure = tlas.accelerationStructure;
+    vkGetAccelerationStructureMemoryRequirementsNV(device, &memoryRequirementsInfo, &memReqTopLevelAS);
+
+    Vk::Buffer scratchBuffer;
+    createBuffer(scratchBuffer, VK_BUFFER_USAGE_RAY_TRACING_BIT_NV, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, memReqTopLevelAS.memoryRequirements.size);
+
+    // build top-level acceleration structure
+
+    VkAccelerationStructureInfoNV buildInfo{};
+    buildInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_INFO_NV;
+    buildInfo.type = VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_NV;
+    buildInfo.geometryCount = 0;
+    buildInfo.pGeometries = nullptr;
+    buildInfo.instanceCount = sphereInstances.size();
+
+    VkCommandBuffer cmdBuffer = Vk::beginSingleTimeCommands(device, commandPool);
+
+    vkCmdBuildAccelerationStructureNV(
+        cmdBuffer,
+        &buildInfo,
+        instanceBuffer.buffer,
+        0,
+        VK_FALSE,
+        tlas.accelerationStructure,
+        VK_NULL_HANDLE,
+        scratchBuffer.buffer,
+        0);
+
+    Vk::endSingleTimeCommands(device, cmdBuffer, queues.compute, commandPool);
+
+    destroyBuffer(scratchBuffer);
+}
+
+void Renderer::updateModelDescriptorSet(uint32_t swapchainIndex) {
+    VkDescriptorSet& descriptorSet = perFrameRenderResources[swapchainIndex].descriptorSetModels;
+
+    // acceleration structure descriptor
+
+    VkWriteDescriptorSetAccelerationStructureNV descriptorAccelerationStructureInfo{};
+    descriptorAccelerationStructureInfo.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_NV;
+    descriptorAccelerationStructureInfo.accelerationStructureCount = 1;
+    descriptorAccelerationStructureInfo.pAccelerationStructures = &perFrameRenderResources[swapchainIndex].tlas.accelerationStructure;
+
+    VkWriteDescriptorSet accelerationStructureWrite{};
+    accelerationStructureWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    // The specialized acceleration structure descriptor has to be chained
+    accelerationStructureWrite.pNext = &descriptorAccelerationStructureInfo;
+    accelerationStructureWrite.dstSet = descriptorSet;
+    accelerationStructureWrite.descriptorCount = 1;
+    accelerationStructureWrite.descriptorType = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_NV;
+    accelerationStructureWrite.dstBinding = 0;
+
+    // sphere aabbs ssbo
+
+    VkDescriptorBufferInfo spheresDescriptor{};
+    spheresDescriptor.buffer = perFrameRenderResources[swapchainIndex].bufferSpheres.buffer;
+    spheresDescriptor.offset = 0;
+    spheresDescriptor.range = perFrameRenderResources[swapchainIndex].bufferSpheres.size;
+
+    VkWriteDescriptorSet spheresWrite{};
+    spheresWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    spheresWrite.dstSet = descriptorSet;
+    spheresWrite.descriptorCount = 1;
+    spheresWrite.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    spheresWrite.pBufferInfo = &spheresDescriptor;
+    spheresWrite.dstBinding = 1;
+
+    std::vector<VkWriteDescriptorSet> writeDescriptorSets = {
+        accelerationStructureWrite,
+        spheresWrite
+    };
+    vkUpdateDescriptorSets(device, static_cast<uint32_t>(writeDescriptorSets.size()), writeDescriptorSets.data(), 0, VK_NULL_HANDLE);
+}
+
+void Renderer::recordCommandBufferRender(uint32_t swapchainIndex) {
+    // Calculate shader binding offsets, which is pretty straight forward in our example
+    VkDeviceSize bindingOffsetRayGenShader = rayTracingProperties.shaderGroupHandleSize * INDEX_RAYGEN;
+    VkDeviceSize bindingOffsetHitShader = rayTracingProperties.shaderGroupHandleSize * INDEX_CLOSEST_HIT;
+    VkDeviceSize bindingOffsetMissShader = rayTracingProperties.shaderGroupHandleSize * INDEX_MISS;
+    VkDeviceSize bindingStride = rayTracingProperties.shaderGroupHandleSize;
+
+    VkCommandBufferBeginInfo beginInfo{};
+    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    VkImageSubresourceRange subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
+
+    VkCommandBuffer& commandBuffer = commandBuffersRender[swapchainIndex];
+    VK_CHECK_RESULT(vkBeginCommandBuffer(commandBuffer, &beginInfo), "failed to begin command buffer");
+
+    // ray tracing dispath
+
+    uint32_t uboDynamicOffset = swapchainIndex * bufferUBO.dynamicStride;
+
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_RAY_TRACING_NV, pipeline);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_RAY_TRACING_NV, pipelineLayout, 0, 1, &descriptorSetRender, 1, &uboDynamicOffset);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_RAY_TRACING_NV, pipelineLayout, 1, 1, &perFrameRenderResources[swapchainIndex].descriptorSetModels, 0, nullptr);
+
+    vkCmdTraceRaysNV(commandBuffer,
+        shaderBindingTable.buffer, bindingOffsetRayGenShader,
+        shaderBindingTable.buffer, bindingOffsetMissShader, bindingStride,
+        shaderBindingTable.buffer, bindingOffsetHitShader, bindingStride,
+        VK_NULL_HANDLE, 0, 0,
+        swapchain.extent.width, swapchain.extent.height, 1);
+
+    VK_CHECK_RESULT(vkEndCommandBuffer(commandBuffer), "failed to end rendering command buffer");
+}
+
+void Renderer::updateUniformBuffer(glm::mat4 viewInverse, glm::mat4 projInverse, glm::vec3 cameraPos, uint32_t swapchainIndex) {
+    UniformData uniformData;
     uniformData.viewInverse = viewInverse;
     uniformData.projInverse = projInverse;
-    uniformData.cameraPos = cameraPos;
+    uniformData.cameraPos = glm::vec4(cameraPos, 1.0f);
 
     uploadBufferHostVisible(bufferUBO, &uniformData, sizeof(UniformData), static_cast<VkDeviceSize>(swapchainIndex) * bufferUBO.dynamicStride);
 }
@@ -999,9 +909,8 @@ void Renderer::recreateSwapChain() {
     cleanupSwapChain();
 
     createSwapChain();
-    createImageViews();
     createRenderImage();
-    createDescriptorSets();
+    createDescriptorSetRender();
     createCommandBuffersRender();
     createCommandBuffersImageCopy();
 }
@@ -1035,17 +944,27 @@ void Renderer::cleanUp() {
 
     vkDestroyPipeline(device, pipeline, VK_ALLOCATOR);
     vkDestroyPipelineLayout(device, pipelineLayout, VK_ALLOCATOR);
-    vkDestroyDescriptorSetLayout(device, descriptorSetLayout, VK_ALLOCATOR);
+    vkDestroyDescriptorSetLayout(device, descriptorSetLayoutModels, VK_ALLOCATOR);
+    vkDestroyDescriptorSetLayout(device, descriptorSetLayoutRender, VK_ALLOCATOR);
 
-    vkFreeMemory(device, blasSphere.memory, VK_ALLOCATOR);
-    vkFreeMemory(device, tlas.memory, VK_ALLOCATOR);
+    for (PerFrameRenderResources& resources : perFrameRenderResources) {
+        destroyBuffer(resources.bufferSpheres);
+        vkDestroyAccelerationStructureNV(device, resources.tlas.accelerationStructure, nullptr);
+        vkFreeMemory(device, resources.tlas.memory, VK_ALLOCATOR);
+    }
+    perFrameRenderResources.clear();
 
-    vkDestroyAccelerationStructureNV(device, blasSphere.accelerationStructure, nullptr);
-    vkDestroyAccelerationStructureNV(device, tlas.accelerationStructure, nullptr);
+    for (Vk::AccelerationStructure& as : sphereBLASs) {
+        vkFreeMemory(device, as.memory, VK_ALLOCATOR);
+        vkDestroyAccelerationStructureNV(device, as.accelerationStructure, nullptr);
+    }
+    sphereBLASs.clear();
+    sphereAABBs.clear();
+    sphereInstances.clear();
 
-    destroyBuffer(bufferSpheres);
     destroyBuffer(bufferUBO);
     destroyBuffer(shaderBindingTable);
+    vkDestroyDescriptorPool(device, descriptorPoolModels, VK_ALLOCATOR);
 
     cleanupSwapChain();
 
@@ -1068,13 +987,12 @@ void Renderer::cleanUp() {
 }
 
 void Renderer::cleanupSwapChain() {
-    for (auto imageView : swapchain.imageViews) vkDestroyImageView(device, imageView, VK_ALLOCATOR);
     vkDestroySwapchainKHR(device, swapchain.swapchain, VK_ALLOCATOR);
     vkFreeCommandBuffers(device, commandPool, static_cast<uint32_t>(commandBuffersRender.size()), commandBuffersRender.data());
     vkFreeCommandBuffers(device, commandPool, static_cast<uint32_t>(commandBuffersImageCopy.size()), commandBuffersImageCopy.data());
     commandBuffersRender.clear();
     commandBuffersImageCopy.clear();
-    vkDestroyDescriptorPool(device, descriptorPool, VK_ALLOCATOR);
+    vkDestroyDescriptorPool(device, descriptorPoolRender, VK_ALLOCATOR);
     renderImage.destroy(device);
 }
 
@@ -1383,6 +1301,10 @@ void Renderer::uploadBufferDeviceLocal(Vk::Buffer& buffer, void* data, VkDeviceS
 }
 
 void Renderer::uploadBufferHostVisible(Vk::Buffer& buffer, void* data, VkDeviceSize size, VkDeviceSize bufferOffset) {
+    if (size + bufferOffset > buffer.size) {
+        AID_ERROR("uploadBufferHostVisible: trying to upload outside of buffer memory");
+    }
+
     void* dataDst;
     VK_CHECK_RESULT(vkMapMemory(device, buffer.memory, bufferOffset, size, 0, &dataDst), "failed to map buffer memory");
     memcpy(dataDst, data, (size_t)size);
@@ -1390,11 +1312,82 @@ void Renderer::uploadBufferHostVisible(Vk::Buffer& buffer, void* data, VkDeviceS
 }
 
 void Renderer::destroyBuffer(Vk::Buffer& buffer) {
-    vkDestroyBuffer(device, buffer.buffer, VK_ALLOCATOR);
-    vkFreeMemory(device, buffer.memory, VK_ALLOCATOR);
+    if (buffer.buffer != VK_NULL_HANDLE) vkDestroyBuffer(device, buffer.buffer, VK_ALLOCATOR);
+    if (buffer.memory != VK_NULL_HANDLE) vkFreeMemory(device, buffer.memory, VK_ALLOCATOR);
 }
 
 VkDeviceSize Renderer::getUBOOffsetAligned(VkDeviceSize stride) {
     VkDeviceSize minAlignment = physicalDeviceProperties.limits.minUniformBufferOffsetAlignment;
     return minAlignment * static_cast<VkDeviceSize>((stride + minAlignment - 1) / minAlignment); // minAlignment * ceil(stride / minAlignment)
+}
+
+void Renderer::createBottomLevelAccelerationStructure(Vk::AccelerationStructure& blas, const VkGeometryNV* geometries, uint32_t geometryCount) {
+    VkAccelerationStructureInfoNV accelerationStructureInfo{};
+    accelerationStructureInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_INFO_NV;
+    accelerationStructureInfo.type = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_NV;
+    accelerationStructureInfo.instanceCount = 0;
+    accelerationStructureInfo.geometryCount = geometryCount;
+    accelerationStructureInfo.pGeometries = geometries;
+
+    VkAccelerationStructureCreateInfoNV accelerationStructureCI{};
+    accelerationStructureCI.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_NV;
+    accelerationStructureCI.info = accelerationStructureInfo;
+    VK_CHECK_RESULT(vkCreateAccelerationStructureNV(device, &accelerationStructureCI, VK_ALLOCATOR, &blas.accelerationStructure), "failed to create bottom level acceleration structure");
+
+    VkAccelerationStructureMemoryRequirementsInfoNV memoryRequirementsInfo{};
+    memoryRequirementsInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_MEMORY_REQUIREMENTS_INFO_NV;
+    memoryRequirementsInfo.type = VK_ACCELERATION_STRUCTURE_MEMORY_REQUIREMENTS_TYPE_OBJECT_NV;
+    memoryRequirementsInfo.accelerationStructure = blas.accelerationStructure;
+
+    VkMemoryRequirements2 memoryRequirements{};
+    vkGetAccelerationStructureMemoryRequirementsNV(device, &memoryRequirementsInfo, &memoryRequirements);
+
+    VkMemoryAllocateInfo memoryAllocateInfo{};
+    memoryAllocateInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+    memoryAllocateInfo.allocationSize = memoryRequirements.memoryRequirements.size;
+    memoryAllocateInfo.memoryTypeIndex = Vk::findMemoryType(physicalDevice, memoryRequirements.memoryRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+    VK_CHECK_RESULT(vkAllocateMemory(device, &memoryAllocateInfo, VK_ALLOCATOR, &blas.memory), "failed to allocate bottom level acceleration structure memory");
+
+    VkBindAccelerationStructureMemoryInfoNV accelerationStructureMemoryInfo{};
+    accelerationStructureMemoryInfo.sType = VK_STRUCTURE_TYPE_BIND_ACCELERATION_STRUCTURE_MEMORY_INFO_NV;
+    accelerationStructureMemoryInfo.accelerationStructure = blas.accelerationStructure;
+    accelerationStructureMemoryInfo.memory = blas.memory;
+    VK_CHECK_RESULT(vkBindAccelerationStructureMemoryNV(device, 1, &accelerationStructureMemoryInfo), "failed to bind acceleration structure memory");
+
+    VK_CHECK_RESULT(vkGetAccelerationStructureHandleNV(device, blas.accelerationStructure, sizeof(uint64_t), &blas.handle), "failed to get bottom level acceleration structure handle");
+}
+
+void Renderer::createTopLevelAccelerationStructure(Vk::AccelerationStructure& tlas, uint32_t instanceCount) {
+    VkAccelerationStructureInfoNV accelerationStructureInfo{};
+    accelerationStructureInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_INFO_NV;
+    accelerationStructureInfo.type = VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_NV;
+    accelerationStructureInfo.instanceCount = instanceCount;
+    accelerationStructureInfo.geometryCount = 0;
+
+    VkAccelerationStructureCreateInfoNV accelerationStructureCI{};
+    accelerationStructureCI.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_NV;
+    accelerationStructureCI.info = accelerationStructureInfo;
+    VK_CHECK_RESULT(vkCreateAccelerationStructureNV(device, &accelerationStructureCI, VK_ALLOCATOR, &tlas.accelerationStructure), "failed to create top level acceleration stucture");
+
+    VkAccelerationStructureMemoryRequirementsInfoNV memoryRequirementsInfo{};
+    memoryRequirementsInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_MEMORY_REQUIREMENTS_INFO_NV;
+    memoryRequirementsInfo.type = VK_ACCELERATION_STRUCTURE_MEMORY_REQUIREMENTS_TYPE_OBJECT_NV;
+    memoryRequirementsInfo.accelerationStructure = tlas.accelerationStructure;
+
+    VkMemoryRequirements2 memoryRequirements{};
+    vkGetAccelerationStructureMemoryRequirementsNV(device, &memoryRequirementsInfo, &memoryRequirements);
+
+    VkMemoryAllocateInfo memoryAllocateInfo{};
+    memoryAllocateInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+    memoryAllocateInfo.allocationSize = memoryRequirements.memoryRequirements.size;
+    memoryAllocateInfo.memoryTypeIndex = Vk::findMemoryType(physicalDevice, memoryRequirements.memoryRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+    VK_CHECK_RESULT(vkAllocateMemory(device, &memoryAllocateInfo, VK_ALLOCATOR, &tlas.memory), "failed to allocate top level acceleration structure memory");
+
+    VkBindAccelerationStructureMemoryInfoNV accelerationStructureMemoryInfo{};
+    accelerationStructureMemoryInfo.sType = VK_STRUCTURE_TYPE_BIND_ACCELERATION_STRUCTURE_MEMORY_INFO_NV;
+    accelerationStructureMemoryInfo.accelerationStructure = tlas.accelerationStructure;
+    accelerationStructureMemoryInfo.memory = tlas.memory;
+    VK_CHECK_RESULT(vkBindAccelerationStructureMemoryNV(device, 1, &accelerationStructureMemoryInfo), "failed to bind acceleration structure memory");
+
+    VK_CHECK_RESULT(vkGetAccelerationStructureHandleNV(device, tlas.accelerationStructure, sizeof(uint64_t), &tlas.handle), "failed to get top level acceleration structure handle");
 }

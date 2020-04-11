@@ -47,7 +47,7 @@ void Aidanic::init() {
     spheres.push_back(Models::Sphere{ {3.0, 2.0, 1.0}, 0.5 });
     spheres.push_back(Models::Sphere{ {0.0, 0.0, 0.0}, 1.0 });
 
-    renderer.init(this, requiredExtensions, spheres, viewInverse, projInverse, viewerPosition);
+    renderer.init(this, requiredExtensions, viewInverse, projInverse, viewerPosition);
     AID_INFO("Vulkan renderer RTX initialized");
 
     initImGui();

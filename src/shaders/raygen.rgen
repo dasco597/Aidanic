@@ -1,13 +1,14 @@
 #version 460
 #extension GL_NV_ray_tracing : require
+#extension GL_EXT_nonuniform_qualifier : require
 
-layout(set = 0, binding = 0) uniform accelerationStructureNV tlas;
-layout(set = 0, binding = 1, rgba8) uniform image2D renderImage;
-layout(set = 0, binding = 2) uniform CameraProperties {
+layout(set = 0, binding = 0, rgba8) uniform image2D renderImage;
+layout(set = 0, binding = 1) uniform CameraProperties {
 	mat4 viewInverse;
 	mat4 projInverse;
 	vec4 position;
 } cam;
+layout(set = 1, binding = 0) uniform accelerationStructureNV tlas;
 
 layout(location = 0) rayPayloadNV vec3 hitValue;
 

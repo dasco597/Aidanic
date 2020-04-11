@@ -18,10 +18,12 @@ class ImGuiVk;
 
 class Renderer {
 public:
-    void init(Aidanic* app, std::vector<const char*>& requiredExtensions, std::vector<Models::Sphere>& spheres, glm::mat4 viewInverse, glm::mat4 projInverse, glm::vec3 cameraPos);
+    void init(Aidanic* app, std::vector<const char*>& requiredExtensions, glm::mat4 viewInverse, glm::mat4 projInverse, glm::vec3 cameraPos);
+    void addSpheres(std::vector<Models::Sphere>& spheres);
     void drawFrame(bool framebufferResized, glm::mat4 viewInverse, glm::mat4 projInverse, glm::vec3 cameraPos, ImGuiVk* imGuiRenderer, bool renderImGui = false);
     void cleanUp();
 
+    // TODO mode to vkHelper
     void createBuffer(Vk::Buffer& buffer, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkDeviceSize size);
     void uploadBufferDeviceLocal(Vk::Buffer& buffer, void* data, VkDeviceSize size, VkDeviceSize bufferOffset = 0);
     void uploadBufferHostVisible(Vk::Buffer& buffer, void* data, VkDeviceSize size, VkDeviceSize bufferOffset = 0);
@@ -59,33 +61,43 @@ private:
         int numImages = 0;
         VkFormat format;
         VkExtent2D extent;
-        std::vector<VkImageView> imageViews;
     } swapchain;
 
     VkPhysicalDeviceRayTracingPropertiesNV rayTracingProperties{};
     Vk::StorageImage renderImage;
-    Vk::AccelerationStructure blasSphere, tlas;
     Vk::Buffer shaderBindingTable;
 
     VkPipeline pipeline;
     VkPipelineLayout pipelineLayout;
 
-    VkDescriptorSet descriptorSet;
-    VkDescriptorSetLayout descriptorSetLayout;
-    VkDescriptorPool descriptorPool;
-
     VkCommandPool commandPool;
-    std::vector<VkCommandBuffer> commandBuffersRender;
     std::vector<VkCommandBuffer> commandBuffersImageCopy;
 
+    VkDescriptorSet descriptorSetRender;
+    VkDescriptorPool descriptorPoolRender;
+    VkDescriptorSetLayout descriptorSetLayoutRender, descriptorSetLayoutModels;
+
+    Vk::Buffer bufferUBO;
+
     std::vector<Vk::AABB> sphereAABBs;
-    Vk::Buffer bufferSpheres, bufferUBO;
+    std::vector<Vk::AccelerationStructure> sphereBLASs;
+    std::vector<Vk::BLASInstance> sphereInstances;
+
+    VkDescriptorPool descriptorPoolModels;
+    struct PerFrameRenderResources {
+        Vk::Buffer bufferSpheres;
+        Vk::AccelerationStructure tlas;
+        VkDescriptorSet descriptorSetModels;
+        bool updateSpheres = false;
+    };
+    std::vector<PerFrameRenderResources> perFrameRenderResources;
+    std::vector<VkCommandBuffer> commandBuffersRender;
 
     struct UniformData {
         glm::mat4 viewInverse = glm::mat4(1.0f);
         glm::mat4 projInverse = glm::mat4(1.0f);
         glm::vec4 cameraPos = glm::vec4(0.0f);
-    } uniformData;
+    };
 
     std::vector<VkSemaphore> semaphoresImageAvailable, semaphoresRenderFinished, semaphoresImGuiFinished, semaphoresImageCopyFinished;
     std::vector<VkFence> inFlightFences, imagesInFlight;
@@ -113,24 +125,31 @@ private:
     void createSurface();
     void pickPhysicalDevice();
     void createLogicalDevice();
+
     void createSwapChain();
     void createCommandPool();
-    void createImageViews();
     void createSyncObjects();
 
-    void createScene(std::vector<Models::Sphere>& spheres);
     void createRenderImage();
+    void initPerFrameRenderResources();
+    void createUBO(glm::mat4 viewInverse, glm::mat4 projInverse, glm::vec3 cameraPos);
+
+    void createDescriptorSetLayouts();
     void createRayTracingPipeline();
     void createShaderBindingTable();
-    void createDescriptorSets();
+    void createDescriptorSetRender();
+
     void createCommandBuffersRender();
     void createCommandBuffersImageCopy();
-    void createBottomLevelAccelerationStructure(Vk::AccelerationStructure& blas, const VkGeometryNV* geometries, uint32_t geometryCount);
-    void createTopLevelAccelerationStructure();
 
     // main loop
 
-    void updateUniformBuffer(glm::mat4 viewInverse, glm::mat4 projInverse, glm::vec4 cameraPos, uint32_t swapchainIndex);
+    void updateModels(uint32_t swapchainIndex);
+    void updateModelTLAS(uint32_t swapchainIndex);
+    void updateModelDescriptorSet(uint32_t swapchainIndex);
+    void recordCommandBufferRender(uint32_t swapchainIndex);
+    void updateUniformBuffer(glm::mat4 viewInverse, glm::mat4 projInverse, glm::vec3 cameraPos, uint32_t swapchainIndex);
+    
     void recreateSwapChain();
     static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity, VkDebugUtilsMessageTypeFlagsEXT messageType, const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData, void* pUserData);
 
@@ -157,6 +176,9 @@ private:
         VkImageSubresourceRange subresourceRange, VkPipelineStageFlags srcStageMask = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VkPipelineStageFlags dstStageMask = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT);
 
     VkDeviceSize getUBOOffsetAligned(VkDeviceSize stride);
+
+    void createBottomLevelAccelerationStructure(Vk::AccelerationStructure& blas, const VkGeometryNV* geometries, uint32_t geometryCount);
+    void createTopLevelAccelerationStructure(Vk::AccelerationStructure& tlas, uint32_t instanceCount);
 
     // vulkan pointers
 
