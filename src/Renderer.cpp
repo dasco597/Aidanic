@@ -17,16 +17,18 @@ const bool enableValidationLayers = true;
 
 // shader files (relative to assets folder, _CONFIG::getAssetsPath())
 #define SHADER_SRC_RAYGEN "spirv/raygen.rgen.spv"
-#define SHADER_SRC_INTERSECTION "spirv/sphere.rint.spv"
+#define SHADER_SRC_SPHERE_INTERSECTION "spirv/sphere.rint.spv"
 #define SHADER_SRC_CLOSEST_HIT "spirv/closesthit.rchit.spv"
-#define SHADER_SRC_MISS "spirv/miss.rmiss.spv"
+#define SHADER_SRC_MISS_XYZ "spirv/background_xyz.rmiss.spv"
+#define SHADER_SRC_MISS_BLACK "spirv/background_black.rmiss.spv"
 
 // shader indices
 enum {
     INDEX_RAYGEN,
-    INDEX_INTERSECTION,
+    INDEX_SPHERE_INTERSECTION,
     INDEX_CLOSEST_HIT,
-    INDEX_MISS,
+    INDEX_MISS_XYZ,
+    INDEX_MISS_BLACK,
     SHADER_COUNT
 };
 
@@ -422,7 +424,7 @@ void Renderer::createDescriptorSetLayouts() {
         layoutBindingAccelerationStructure.binding = 0;
         layoutBindingAccelerationStructure.descriptorType = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_NV;
         layoutBindingAccelerationStructure.descriptorCount = 1;
-        layoutBindingAccelerationStructure.stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_NV;
+        layoutBindingAccelerationStructure.stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_NV | VK_SHADER_STAGE_INTERSECTION_BIT_NV;
 
         VkDescriptorSetLayoutBinding layoutBindingSpheresBuffer{};
         layoutBindingSpheresBuffer.binding = 1;
@@ -454,10 +456,10 @@ void Renderer::createRayTracingPipeline() {
     std::array<VkPipelineShaderStageCreateInfo, SHADER_COUNT> shaderStages;
     std::array<VkShaderModule, SHADER_COUNT> shaderModules;
     shaderStages[INDEX_RAYGEN] = Vk::loadShader(device, std::string(_CONFIG::getAssetsPath()) + std::string(SHADER_SRC_RAYGEN), VK_SHADER_STAGE_RAYGEN_BIT_NV, shaderModules[INDEX_RAYGEN]);
-    shaderStages[INDEX_INTERSECTION] = Vk::loadShader(device, std::string(_CONFIG::getAssetsPath()) + std::string(SHADER_SRC_INTERSECTION), VK_SHADER_STAGE_INTERSECTION_BIT_NV, shaderModules[INDEX_INTERSECTION]);
-    //shaderStages[INDEX_ANY_HIT] = Vk::loadShader(device, std::string(_CONFIG::getAssetsPath()) + std::string(SHADER_SRC_ANY_HIT), VK_SHADER_STAGE_ANY_HIT_BIT_NV, shaderModules[INDEX_ANY_HIT]);
+    shaderStages[INDEX_SPHERE_INTERSECTION] = Vk::loadShader(device, std::string(_CONFIG::getAssetsPath()) + std::string(SHADER_SRC_SPHERE_INTERSECTION), VK_SHADER_STAGE_INTERSECTION_BIT_NV, shaderModules[INDEX_SPHERE_INTERSECTION]);
     shaderStages[INDEX_CLOSEST_HIT] = Vk::loadShader(device, std::string(_CONFIG::getAssetsPath()) + std::string(SHADER_SRC_CLOSEST_HIT), VK_SHADER_STAGE_CLOSEST_HIT_BIT_NV, shaderModules[INDEX_CLOSEST_HIT]);
-    shaderStages[INDEX_MISS] = Vk::loadShader(device, std::string(_CONFIG::getAssetsPath()) + std::string(SHADER_SRC_MISS), VK_SHADER_STAGE_MISS_BIT_NV, shaderModules[INDEX_MISS]);
+    shaderStages[INDEX_MISS_XYZ] = Vk::loadShader(device, std::string(_CONFIG::getAssetsPath()) + std::string(SHADER_SRC_MISS_XYZ), VK_SHADER_STAGE_MISS_BIT_NV, shaderModules[INDEX_MISS_XYZ]);
+    shaderStages[INDEX_MISS_BLACK] = Vk::loadShader(device, std::string(_CONFIG::getAssetsPath()) + std::string(SHADER_SRC_MISS_BLACK), VK_SHADER_STAGE_MISS_BIT_NV, shaderModules[INDEX_MISS_BLACK]);
 
     // ray tracing shader groups
     std::array<VkRayTracingShaderGroupCreateInfoNV, SHADER_COUNT> shaderGroups{};
@@ -472,19 +474,18 @@ void Renderer::createRayTracingPipeline() {
     shaderGroups[INDEX_RAYGEN].type = VK_RAY_TRACING_SHADER_GROUP_TYPE_GENERAL_NV;
     shaderGroups[INDEX_RAYGEN].generalShader = INDEX_RAYGEN;
 
-    shaderGroups[INDEX_INTERSECTION].type = VK_RAY_TRACING_SHADER_GROUP_TYPE_PROCEDURAL_HIT_GROUP_NV;
-    shaderGroups[INDEX_INTERSECTION].intersectionShader = INDEX_INTERSECTION;
-
-    //shaderGroups[INDEX_ANY_HIT].type = VK_RAY_TRACING_SHADER_GROUP_TYPE_PROCEDURAL_HIT_GROUP_NV;
-    //shaderGroups[INDEX_ANY_HIT].anyHitShader = INDEX_ANY_HIT;
-    //shaderGroups[INDEX_ANY_HIT].intersectionShader = INDEX_INTERSECTION;
+    shaderGroups[INDEX_SPHERE_INTERSECTION].type = VK_RAY_TRACING_SHADER_GROUP_TYPE_PROCEDURAL_HIT_GROUP_NV;
+    shaderGroups[INDEX_SPHERE_INTERSECTION].intersectionShader = INDEX_SPHERE_INTERSECTION;
 
     shaderGroups[INDEX_CLOSEST_HIT].type = VK_RAY_TRACING_SHADER_GROUP_TYPE_PROCEDURAL_HIT_GROUP_NV;
     shaderGroups[INDEX_CLOSEST_HIT].closestHitShader = INDEX_CLOSEST_HIT;
-    shaderGroups[INDEX_CLOSEST_HIT].intersectionShader = INDEX_INTERSECTION;
+    shaderGroups[INDEX_CLOSEST_HIT].intersectionShader = INDEX_SPHERE_INTERSECTION;
 
-    shaderGroups[INDEX_MISS].type = VK_RAY_TRACING_SHADER_GROUP_TYPE_GENERAL_NV;
-    shaderGroups[INDEX_MISS].generalShader = INDEX_MISS;
+    shaderGroups[INDEX_MISS_XYZ].type = VK_RAY_TRACING_SHADER_GROUP_TYPE_GENERAL_NV;
+    shaderGroups[INDEX_MISS_XYZ].generalShader = INDEX_MISS_XYZ;
+
+    shaderGroups[INDEX_MISS_BLACK].type = VK_RAY_TRACING_SHADER_GROUP_TYPE_GENERAL_NV;
+    shaderGroups[INDEX_MISS_BLACK].generalShader = INDEX_MISS_BLACK;
 
     VkRayTracingPipelineCreateInfoNV rayPipelineCI{};
     rayPipelineCI.sType = VK_STRUCTURE_TYPE_RAY_TRACING_PIPELINE_CREATE_INFO_NV;
@@ -492,7 +493,7 @@ void Renderer::createRayTracingPipeline() {
     rayPipelineCI.pStages = shaderStages.data();
     rayPipelineCI.groupCount = static_cast<uint32_t>(shaderGroups.size());
     rayPipelineCI.pGroups = shaderGroups.data();
-    rayPipelineCI.maxRecursionDepth = 1;
+    rayPipelineCI.maxRecursionDepth = 2;
     rayPipelineCI.layout = pipelineLayout;
     VK_CHECK_RESULT(vkCreateRayTracingPipelinesNV(device, VK_NULL_HANDLE, 1, &rayPipelineCI, VK_ALLOCATOR, &pipeline), "failed to create ray tracing pipeline");
 
@@ -567,6 +568,7 @@ void Renderer::createDescriptorSetRender() {
 
 void Renderer::createCommandBuffersRender() {
     commandBuffersRender.resize(swapchain.numImages);
+    recordCommandBufferRenderSignals.resize(swapchain.numImages, false);
 
     VkCommandBufferAllocateInfo allocInfo{};
     allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
@@ -656,6 +658,10 @@ void Renderer::drawFrame(bool framebufferResized, glm::mat4 viewInverse, glm::ma
     }
 
     updateModels(imageIndex);
+    if (recordCommandBufferRenderSignals[imageIndex]) {
+        recordCommandBufferRender(imageIndex);
+        recordCommandBufferRenderSignals[imageIndex] = false;
+    }
     updateUniformBuffer(viewInverse, projInverse, cameraPos, imageIndex);
 
     if (imagesInFlight[imageIndex] != VK_NULL_HANDLE) {
@@ -859,6 +865,11 @@ int Renderer::addSphere(Model::Sphere sphere) {
     return 0;
 }
 
+void Renderer::setBackgroundMode(BackgroundMode bgm) {
+    backgroundMode = bgm;
+    for (int i = 0; i < recordCommandBufferRenderSignals.size(); i++) recordCommandBufferRenderSignals[i] = true;
+}
+
 void Renderer::updateModels(uint32_t swapchainIndex) {
     PerFrameRenderResources& resources = perFrameRenderResources[swapchainIndex];
     if (!resources.updateSpheres) return;
@@ -869,7 +880,7 @@ void Renderer::updateModels(uint32_t swapchainIndex) {
 
     updateSpheresBuffer(swapchainIndex);
     updateModelDescriptorSet(swapchainIndex);
-    recordCommandBufferRender(swapchainIndex);
+    recordCommandBufferRenderSignals[swapchainIndex] = true;
 
     resources.updateSpheres = false;
 }
@@ -981,11 +992,15 @@ void Renderer::updateModelDescriptorSet(uint32_t swapchainIndex) {
 }
 
 void Renderer::recordCommandBufferRender(uint32_t swapchainIndex) {
-    // Calculate shader binding offsets, which is pretty straight forward in our example
-    VkDeviceSize bindingOffsetRayGenShader = rayTracingProperties.shaderGroupHandleSize * INDEX_RAYGEN;
-    VkDeviceSize bindingOffsetHitShader = rayTracingProperties.shaderGroupHandleSize * INDEX_CLOSEST_HIT;
-    VkDeviceSize bindingOffsetMissShader = rayTracingProperties.shaderGroupHandleSize * INDEX_MISS;
-    VkDeviceSize bindingStride = rayTracingProperties.shaderGroupHandleSize;
+    // shader binding offsets
+    VkDeviceSize bindingOffsetRayGenShader = static_cast<VkDeviceSize>(rayTracingProperties.shaderGroupHandleSize * INDEX_RAYGEN);
+    VkDeviceSize bindingOffsetHitShader = static_cast<VkDeviceSize>(rayTracingProperties.shaderGroupHandleSize * INDEX_CLOSEST_HIT);
+    VkDeviceSize bindingOffsetMissShader = 0;
+    switch (backgroundMode) {
+    case BackgroundMode::XYZ: bindingOffsetMissShader = static_cast<VkDeviceSize>(rayTracingProperties.shaderGroupHandleSize * INDEX_MISS_XYZ); break;
+    case BackgroundMode::BLACK: bindingOffsetMissShader = static_cast<VkDeviceSize>(rayTracingProperties.shaderGroupHandleSize * INDEX_MISS_BLACK); break;
+    }
+    VkDeviceSize bindingStride = static_cast<VkDeviceSize>(rayTracingProperties.shaderGroupHandleSize);
 
     VkCommandBufferBeginInfo beginInfo{};
     beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;

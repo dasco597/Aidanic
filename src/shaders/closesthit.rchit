@@ -6,19 +6,25 @@
 struct Sphere {
     vec4 posRadius;
 };
-layout(std430, binding = 0) readonly buffer Spheres { Sphere spheres[]; };
+layout(set = 1, binding = 0) uniform accelerationStructureNV tlas;
+layout(set = 1, binding = 1, std430) readonly buffer Spheres { Sphere spheres[]; };
 
-struct Hit_Payload {
+struct HitPayload {
     vec4 intersection;
 	vec4 color;
 	vec4 normal;
 };
-hitAttributeNV Hit_Payload hit_payload;
+hitAttributeNV HitPayload hit_payload;
 
-struct Ray_Payload {
+struct RayPayload {
     vec4 color;
 };
-layout(location = 0) rayPayloadInNV Ray_Payload ray_payload;
+layout(location = 0) rayPayloadInNV RayPayload ray_payload;
+
+//struct ShadowPayload {
+//    bool in_shadow;
+//}
+//layout(location = 1) rayPayloadNV ShadowPayload shadow_payload;
 
 void main()
 {

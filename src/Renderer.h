@@ -19,12 +19,19 @@
 class Aidanic;
 class ImGuiVk;
 
+enum struct BackgroundMode {
+    XYZ,
+    BLACK
+};
+
 class Renderer {
 public:
     void init(Aidanic* app, std::vector<const char*>& requiredExtensions, glm::mat4 viewInverse, glm::mat4 projInverse, glm::vec3 cameraPos);
-    int addSphere(Model::Sphere sphere); // returns 0 for success
     void drawFrame(bool framebufferResized, glm::mat4 viewInverse, glm::mat4 projInverse, glm::vec3 cameraPos, ImGuiVk* imGuiRenderer, bool renderImGui = false);
     void cleanUp();
+
+    int addSphere(Model::Sphere sphere); // returns 0 for success
+    void setBackgroundMode(BackgroundMode bgm);
 
     // TODO move to vkHelper and make buffer class
     void createBuffer(Vk::Buffer& buffer, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkDeviceSize size);
@@ -72,6 +79,7 @@ private:
 
     VkPipeline pipeline;
     VkPipelineLayout pipelineLayout;
+    BackgroundMode backgroundMode = BackgroundMode::XYZ;
 
     VkCommandPool commandPool;
     std::vector<VkCommandBuffer> commandBuffersImageCopy;
@@ -98,6 +106,7 @@ private:
         std::vector<uint32_t> updateSphereIndices;
     };
     std::vector<PerFrameRenderResources> perFrameRenderResources;
+    std::vector<bool> recordCommandBufferRenderSignals;
     std::vector<VkCommandBuffer> commandBuffersRender;
 
     struct UniformData {
