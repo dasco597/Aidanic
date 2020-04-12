@@ -6,6 +6,8 @@
 
 using namespace Vk;
 
+#define AABB_EDGE_FACTOR 1.1
+
 std::string Vk::_errorString(VkResult res)
 {
     switch (res)
@@ -42,12 +44,12 @@ std::string Vk::_errorString(VkResult res)
 }
 
 Vk::AABB::AABB(Model::Sphere sphere) {
-    aabb_minx = sphere.pos[0] - sphere.radius;
-    aabb_miny = sphere.pos[1] - sphere.radius;
-    aabb_minz = sphere.pos[2] - sphere.radius;
-    aabb_maxx = sphere.pos[0] + sphere.radius;
-    aabb_maxy = sphere.pos[1] + sphere.radius;
-    aabb_maxz = sphere.pos[2] + sphere.radius;
+    aabb_minx = (sphere.pos[0] - sphere.radius) * AABB_EDGE_FACTOR;
+    aabb_miny = (sphere.pos[1] - sphere.radius) * AABB_EDGE_FACTOR;
+    aabb_minz = (sphere.pos[2] - sphere.radius) * AABB_EDGE_FACTOR;
+    aabb_maxx = (sphere.pos[0] + sphere.radius) * AABB_EDGE_FACTOR;
+    aabb_maxy = (sphere.pos[1] + sphere.radius) * AABB_EDGE_FACTOR;
+    aabb_maxz = (sphere.pos[2] + sphere.radius) * AABB_EDGE_FACTOR;
 }
 
 SwapChainSupportDetails Vk::querySwapChainSupport(VkPhysicalDevice device, VkSurfaceKHR surface) {

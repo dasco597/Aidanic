@@ -4,42 +4,45 @@
 // also defined in Renderer.h
 #define SPHERE_COUNT_PER_TLAS 8
 
+#define MAX_MARCHING_STEPS 100
+#define EPSILON 0.0001
+#define MAX_DISTANCE 100.0
+
 struct Sphere {
-	vec4 posRadius;
+	vec4 pos_radius;
 };
 layout(set = 1, binding = 1, std430) readonly buffer Spheres { Sphere spheres[SPHERE_COUNT_PER_TLAS]; };
 
 hitAttributeNV vec3 normal;
 
+float sdf_sphere(vec3 point, vec3 center, float radius) {
+	return length(point - center) - radius;
+}
+
 void main()
 {
-	if (SPHERE_COUNT_PER_TLAS <= gl_InstanceID) return;
-
-    vec3 center = spheres[gl_InstanceID].posRadius.xyz;
-    float radius = spheres[gl_InstanceID].posRadius.w;
+	if (gl_InstanceID >= SPHERE_COUNT_PER_TLAS) return;
 	
-    vec3 origin = gl_WorldRayOriginNV;
-    vec3 dir = normalize(gl_WorldRayDirectionNV);
-	
-	vec3 co = origin - center;
-	float a = 1.0; // dot(dir, dir)
-	float b = dot(co, dir);
-	float c = dot(co, co) - radius * radius;
-	float discr = b*b - a*c;
-	if (discr <= 0.0) return;
+    vec3 ray_o = gl_WorldRayOriginNV;
+    vec3 ray_d = normalize(gl_WorldRayDirectionNV);
 
-	float t = (-b - sqrt(discr)) / a;
-	if (gl_RayTminNV < t && t < gl_RayTmaxNV) {
-		vec3 p = origin + t * dir;
-		normal = p - center;
-		reportIntersectionNV(t, 0u);
-		return;
+    vec3 center = spheres[gl_InstanceID].pos_radius.xyz;
+    float radius = spheres[gl_InstanceID].pos_radius.w;
+	
+	float depth = 0.0;
+	for (int i = 0; i < MAX_MARCHING_STEPS; i++) {
+		float dist = sdf_sphere(ray_o + ray_d * depth, center, radius);
+
+		if (dist < EPSILON) {
+			reportIntersectionNV(depth, 0u);
+			return;
+		}
+
+		depth += dist;
+		if (dist >= MAX_DISTANCE) {
+			break;
+		}
 	}
-	t = (-b + sqrt(discr)) / a;
-	if (gl_RayTminNV < t && t < gl_RayTmaxNV) {
-		vec3 p = origin + t * dir;
-		normal = p - center;
-		reportIntersectionNV(t, 0u);
-		return;
-	}
+	
+	reportIntersectionNV(MAX_DISTANCE, 1u);
 }

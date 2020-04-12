@@ -1,8 +1,8 @@
 todo:
 
-multiple spheres
 sdf intersect shader
 add sphere color
+lighting
 ssbo with lights
 add spheres with gui
 switch miss shaders with gui to toggle background
