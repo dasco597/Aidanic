@@ -85,19 +85,25 @@ void Aidanic::updateImGui() {
     ioInterface.updateImGui();
     ImGui::NewFrame();
 
-    // test window
+    // sphere parameters
+    static glm::vec3 spherePos = glm::vec3(0.f);
+    static float sphereRadius = 0.5f;
+    static glm::vec4 sphereColor = glm::vec4(1.0f);
+
     static ImVec4 clear_color = ImVec4(0.45f, 0.55f, 0.60f, 1.00f);
-    static float pos[3] = { 0.f, 0.f, 0.f };
-    static float radius = 0.5f;
     {
-        ImGui::Begin("Aidanic");   // Pass a pointer to our bool variable (the window will have a closing button that will clear the bool when clicked)
-        ImGui::Text("Models");
-        ImGui::SliderFloat("x", &pos[0], -2.0f, 2.0f);
-        ImGui::SliderFloat("y", &pos[1], -2.0f, 2.0f);
-        ImGui::SliderFloat("z", &pos[2], -2.0f, 2.0f);
-        ImGui::SliderFloat("radius", &radius, 0.0f, 2.0f);
+        ImGui::Begin("Models");   // Pass a pointer to our bool variable (the window will have a closing button that will clear the bool when clicked)
+        ImGui::Text("Spheres");
+
+        ImGui::SliderFloat("x", &spherePos.x, -2.0f, 2.0f);
+        ImGui::SliderFloat("y", &spherePos.y, -2.0f, 2.0f);
+        ImGui::SliderFloat("z", &spherePos.z, -2.0f, 2.0f);
+        ImGui::SliderFloat("radius", &sphereRadius, 0.0f, 2.0f);
+        ImGui::ColorEdit3("color", &sphereColor.r);
+
         if (ImGui::Button("Add sphere"))
-            renderer.addSphere(Model::Sphere(pos[0], pos[1], pos[2], radius));
+            renderer.addSphere(Model::Sphere(spherePos, sphereRadius, sphereColor));
+
         ImGui::End();
     }
 

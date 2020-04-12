@@ -10,9 +10,12 @@ layout(set = 0, binding = 1) uniform CameraProperties {
 } cam;
 layout(set = 1, binding = 0) uniform accelerationStructureNV tlas;
 
-layout(location = 0) rayPayloadNV vec3 hitValue;
+struct Ray_Payload {
+    vec4 color;
+};
+layout(location = 0) rayPayloadNV Ray_Payload ray_payload;
 
-void main() 
+void main()
 {
 	vec2 uv = (vec2(gl_LaunchIDNV.xy) + vec2(0.5) - vec2(gl_LaunchSizeNV.xy) / 2) / vec2(gl_LaunchSizeNV.x);
 	vec4 target = cam.projInverse * vec4(uv.x, -uv.y, 1, 1);
@@ -25,5 +28,5 @@ void main()
 
 	traceNV(tlas, rayFlags, cullMask, 0, 0, 0, cam.position.xyz, tmin, direction.xyz, tmax, 0);
 
-	imageStore(renderImage, ivec2(gl_LaunchIDNV.xy), vec4(hitValue, 0.0));
+	imageStore(renderImage, ivec2(gl_LaunchIDNV.xy), ray_payload.color);
 }

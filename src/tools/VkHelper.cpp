@@ -44,12 +44,13 @@ std::string Vk::_errorString(VkResult res)
 }
 
 Vk::AABB::AABB(Model::Sphere sphere) {
-    aabb_minx = (sphere.pos[0] - sphere.radius) * AABB_EDGE_FACTOR;
-    aabb_miny = (sphere.pos[1] - sphere.radius) * AABB_EDGE_FACTOR;
-    aabb_minz = (sphere.pos[2] - sphere.radius) * AABB_EDGE_FACTOR;
-    aabb_maxx = (sphere.pos[0] + sphere.radius) * AABB_EDGE_FACTOR;
-    aabb_maxy = (sphere.pos[1] + sphere.radius) * AABB_EDGE_FACTOR;
-    aabb_maxz = (sphere.pos[2] + sphere.radius) * AABB_EDGE_FACTOR;
+    float edge = sphere.posRadius.w * AABB_EDGE_FACTOR;
+    aabb_minx = sphere.posRadius.x - sphere.posRadius.w - edge;
+    aabb_miny = sphere.posRadius.y - sphere.posRadius.w - edge;
+    aabb_minz = sphere.posRadius.z - sphere.posRadius.w - edge;
+    aabb_maxx = sphere.posRadius.x + sphere.posRadius.w + edge;
+    aabb_maxy = sphere.posRadius.y + sphere.posRadius.w + edge;
+    aabb_maxz = sphere.posRadius.z + sphere.posRadius.w + edge;
 }
 
 SwapChainSupportDetails Vk::querySwapChainSupport(VkPhysicalDevice device, VkSurfaceKHR surface) {

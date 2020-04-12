@@ -10,10 +10,16 @@
 
 struct Sphere {
 	vec4 pos_radius;
+	vec4 color;
 };
 layout(set = 1, binding = 1, std430) readonly buffer Spheres { Sphere spheres[SPHERE_COUNT_PER_TLAS]; };
 
-hitAttributeNV vec3 normal;
+struct Hit_Payload {
+	vec4 intersection;
+	vec4 color;
+	vec4 normal;
+};
+hitAttributeNV Hit_Payload hit_payload;
 
 float sdf_sphere(vec3 point, vec3 center, float radius) {
 	return length(point - center) - radius;
@@ -31,9 +37,13 @@ void main()
 	
 	float depth = 0.0;
 	for (int i = 0; i < MAX_MARCHING_STEPS; i++) {
-		float dist = sdf_sphere(ray_o + ray_d * depth, center, radius);
+		vec3 point = ray_o + ray_d * depth;
+		float dist = sdf_sphere(point, center, radius);
 
 		if (dist < EPSILON) {
+			hit_payload.intersection = vec4(point, 1.0);
+			hit_payload.normal = vec4(point - center, 1.0);
+			hit_payload.color = spheres[gl_InstanceID].color;
 			reportIntersectionNV(depth, 0u);
 			return;
 		}
@@ -43,6 +53,4 @@ void main()
 			break;
 		}
 	}
-	
-	reportIntersectionNV(MAX_DISTANCE, 1u);
 }
