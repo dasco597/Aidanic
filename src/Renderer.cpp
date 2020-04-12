@@ -17,7 +17,7 @@ const bool enableValidationLayers = true;
 
 // shader files (relative to assets folder, _CONFIG::getAssetsPath())
 #define SHADER_SRC_RAYGEN "spirv/raygen.rgen.spv"
-#define SHADER_SRC_INTERSECTION "spirv/intersect.rint.spv"
+#define SHADER_SRC_INTERSECTION "spirv/sphere.rint.spv"
 #define SHADER_SRC_CLOSEST_HIT "spirv/closesthit.rchit.spv"
 #define SHADER_SRC_MISS "spirv/miss.rmiss.spv"
 
@@ -49,6 +49,7 @@ void Renderer::init(Aidanic* app, std::vector<const char*>& requiredExtensions, 
     createRenderImage();
     createDescriptorSetLayouts();
     initPerFrameRenderResources();
+    createAABBBuffers();
     createUBO(viewInverse, projInverse, cameraPos);
 
     createRayTracingPipeline();
@@ -263,6 +264,7 @@ void Renderer::createCommandPool() {
     VkCommandPoolCreateInfo poolInfo = {};
     poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
     poolInfo.queueFamilyIndex = queueFamilyIndices.graphicsFamily.value();
+    poolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
 
     VK_CHECK_RESULT(vkCreateCommandPool(device, &poolInfo, nullptr, &commandPool), "failed to create graphics command pool!");
 }
@@ -364,7 +366,8 @@ void Renderer::initPerFrameRenderResources() {
 
         // init spheres buffer
 
-        createBuffer(perFrameRenderResources[i].bufferSpheres, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, sizeof(Vk::AABB));
+        createBuffer(perFrameRenderResources[i].spheresBuffer, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, sizeof(Model::Sphere) * SPHERE_COUNT_PER_TLAS);
+        uploadBufferDeviceLocal(perFrameRenderResources[i].spheresBuffer, spheres.data(), sizeof(Model::Sphere) * spheres.size());
 
         // create descriptor set
 
@@ -377,6 +380,10 @@ void Renderer::initPerFrameRenderResources() {
         
         updateModelDescriptorSet(i);
     }
+}
+
+void Renderer::createAABBBuffers() {
+    createBuffer(sphereAABBsBuffer, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, sizeof(Vk::AABB) * SPHERE_COUNT_PER_TLAS);
 }
 
 void Renderer::createUBO(glm::mat4 viewInverse, glm::mat4 projInverse, glm::vec3 cameraPos) {
@@ -744,13 +751,112 @@ void Renderer::drawFrame(bool framebufferResized, glm::mat4 viewInverse, glm::ma
     currentFrame = (currentFrame + 1) % _MAX_FRAMES_IN_FLIGHT;
 }
 
-void Renderer::addSpheres(std::vector<Models::Sphere>& spheres) {
-    // add AABBs
+int Renderer::addSphere(Model::Sphere sphere) {
+    // pre-set limit for now
+    if (SPHERE_COUNT_PER_TLAS <= sphereCount) return -1;
 
-    //sphereAABBs.resize(spheres.size());
-    //for (int s = 0; s < spheres.size(); s++) sphereAABBs[s].init(spheres[s]);
+    uint32_t sphereIndex = sphereCount;
+    spheres[sphereIndex] = sphere;
 
-    // add BLASs
+    // add a BLAS
+
+    Vk::AABB sphereAABB(sphere);
+
+    // todo need VK_BUFFER_USAGE_STORAGE_BUFFER_BIT?
+    uploadBufferDeviceLocal(sphereAABBsBuffer, &sphereAABB, sizeof(Vk::AABB), sizeof(Vk::AABB) * sphereIndex);
+
+    VkGeometryAABBNV geometryAabbSphere = {};
+    geometryAabbSphere.sType = VK_STRUCTURE_TYPE_GEOMETRY_AABB_NV;
+    geometryAabbSphere.aabbData = sphereAABBsBuffer.buffer;
+    geometryAabbSphere.numAABBs = 1;
+    geometryAabbSphere.stride = sizeof(Vk::AABB);
+    geometryAabbSphere.offset = sizeof(Vk::AABB) * sphereIndex;
+
+    VkGeometryNV geometrySphere{};
+    geometrySphere.sType = VK_STRUCTURE_TYPE_GEOMETRY_NV;
+    geometrySphere.flags = VK_GEOMETRY_OPAQUE_BIT_NV;
+    geometrySphere.geometryType = VK_GEOMETRY_TYPE_AABBS_NV;
+    geometrySphere.geometry.aabbs = geometryAabbSphere;
+
+    // todo how much of this do we need?
+    geometrySphere.geometry.triangles.sType = VK_STRUCTURE_TYPE_GEOMETRY_TRIANGLES_NV;
+    geometrySphere.geometry.triangles.vertexData = VK_NULL_HANDLE;
+    geometrySphere.geometry.triangles.vertexCount = 0;
+    geometrySphere.geometry.triangles.vertexOffset = 0;
+    geometrySphere.geometry.triangles.vertexFormat = VK_FORMAT_R32G32B32_SFLOAT;
+    geometrySphere.geometry.triangles.indexData = VK_NULL_HANDLE;
+    geometrySphere.geometry.triangles.indexCount = 0;
+    geometrySphere.geometry.triangles.indexOffset = 0;
+    geometrySphere.geometry.triangles.indexType = VK_INDEX_TYPE_NONE_NV;
+    geometrySphere.geometry.triangles.transformData = VK_NULL_HANDLE;
+    geometrySphere.geometry.triangles.transformOffset = 0;
+
+    createBottomLevelAccelerationStructure(sphereBLASs[sphereIndex], &geometrySphere, 1);
+
+    // build the blas
+
+    VkAccelerationStructureMemoryRequirementsInfoNV memoryRequirementsInfo{};
+    memoryRequirementsInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_MEMORY_REQUIREMENTS_INFO_NV;
+    memoryRequirementsInfo.type = VK_ACCELERATION_STRUCTURE_MEMORY_REQUIREMENTS_TYPE_BUILD_SCRATCH_NV;
+
+    VkMemoryRequirements2 blasMemoryrequirements;
+    memoryRequirementsInfo.accelerationStructure = sphereBLASs[sphereIndex].accelerationStructure;
+    vkGetAccelerationStructureMemoryRequirementsNV(device, &memoryRequirementsInfo, &blasMemoryrequirements);
+
+    Vk::Buffer scratchBuffer;
+    createBuffer(scratchBuffer, VK_BUFFER_USAGE_RAY_TRACING_BIT_NV, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, blasMemoryrequirements.memoryRequirements.size);
+
+    VkCommandBuffer commandBufferBuild = Vk::beginSingleTimeCommands(device, commandPool);
+
+    VkAccelerationStructureInfoNV buildInfo{};
+    buildInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_INFO_NV;
+    buildInfo.type = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_NV;
+    buildInfo.instanceCount = 0;
+    buildInfo.geometryCount = 1;
+    buildInfo.pGeometries = &geometrySphere;
+
+    vkCmdBuildAccelerationStructureNV(
+        commandBufferBuild,
+        &buildInfo,
+        VK_NULL_HANDLE,
+        0,
+        VK_FALSE,
+        sphereBLASs[sphereIndex].accelerationStructure,
+        VK_NULL_HANDLE,
+        scratchBuffer.buffer,
+        0);
+
+    Vk::endSingleTimeCommands(device, commandBufferBuild, queues.graphics, commandPool);
+
+    destroyBuffer(scratchBuffer);
+
+    sphereCount++;
+
+    // add instance
+
+    glm::mat3x4 transform = {
+        1.0f, 0.0f, 0.0f, 0.0f,
+        0.0f, 1.0f, 0.0f, 0.0f,
+        0.0f, 0.0f, 1.0f, 0.0f
+    };
+
+    Vk::BLASInstance geometryInstance{};
+    geometryInstance.transform = transform;
+    geometryInstance.instanceId = 0;
+    geometryInstance.mask = 0xff;
+    geometryInstance.instanceOffset = 0;
+    geometryInstance.flags = VK_GEOMETRY_INSTANCE_TRIANGLE_CULL_DISABLE_BIT_NV;
+    geometryInstance.accelerationStructureHandle = sphereBLASs[sphereIndex].handle;
+
+    sphereInstances.push_back(geometryInstance);
+
+    // signal that a tlas update is required
+
+    for (PerFrameRenderResources& resources : perFrameRenderResources) {
+        resources.updateSphereIndices.push_back(sphereIndex);
+        resources.updateSpheres = true;
+    }
+    return 0;
 }
 
 void Renderer::updateModels(uint32_t swapchainIndex) {
@@ -761,8 +867,8 @@ void Renderer::updateModels(uint32_t swapchainIndex) {
     vkDestroyAccelerationStructureNV(device, resources.tlas.accelerationStructure, nullptr);
     updateModelTLAS(swapchainIndex);
 
+    updateSpheresBuffer(swapchainIndex);
     updateModelDescriptorSet(swapchainIndex);
-
     recordCommandBufferRender(swapchainIndex);
 
     resources.updateSpheres = false;
@@ -779,7 +885,8 @@ void Renderer::updateModelTLAS(uint32_t swapchainIndex) {
     }
 
     // create top-level acceleration structure
-    createTopLevelAccelerationStructure(tlas, 0);
+    // todo: don't have to recreate! create with max_spheres
+    createTopLevelAccelerationStructure(tlas, sphereInstances.size());
 
     // acceleration structure building requires some scratch space to store temporary information
 
@@ -818,7 +925,18 @@ void Renderer::updateModelTLAS(uint32_t swapchainIndex) {
 
     Vk::endSingleTimeCommands(device, cmdBuffer, queues.compute, commandPool);
 
+    destroyBuffer(instanceBuffer);
     destroyBuffer(scratchBuffer);
+}
+
+void Renderer::updateSpheresBuffer(uint32_t swapchainIndex) {
+    for (uint32_t sphereIndex : perFrameRenderResources[swapchainIndex].updateSphereIndices) {
+        if (SPHERE_COUNT_PER_TLAS <= sphereIndex) {
+            AID_ERROR("trying to update sphere index outside of SPHERE_COUNT_PER_TLAS!");
+        }
+        uploadBufferDeviceLocal(perFrameRenderResources[swapchainIndex].spheresBuffer, &spheres[sphereIndex], sizeof(Model::Sphere), sizeof(Model::Sphere) * sphereIndex);
+    }
+    perFrameRenderResources[swapchainIndex].updateSphereIndices.clear();
 }
 
 void Renderer::updateModelDescriptorSet(uint32_t swapchainIndex) {
@@ -840,12 +958,12 @@ void Renderer::updateModelDescriptorSet(uint32_t swapchainIndex) {
     accelerationStructureWrite.descriptorType = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_NV;
     accelerationStructureWrite.dstBinding = 0;
 
-    // sphere aabbs ssbo
+    // sphere ssbo
 
     VkDescriptorBufferInfo spheresDescriptor{};
-    spheresDescriptor.buffer = perFrameRenderResources[swapchainIndex].bufferSpheres.buffer;
+    spheresDescriptor.buffer = perFrameRenderResources[swapchainIndex].spheresBuffer.buffer;
     spheresDescriptor.offset = 0;
-    spheresDescriptor.range = perFrameRenderResources[swapchainIndex].bufferSpheres.size;
+    spheresDescriptor.range = perFrameRenderResources[swapchainIndex].spheresBuffer.size;
 
     VkWriteDescriptorSet spheresWrite{};
     spheresWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
@@ -948,19 +1066,18 @@ void Renderer::cleanUp() {
     vkDestroyDescriptorSetLayout(device, descriptorSetLayoutRender, VK_ALLOCATOR);
 
     for (PerFrameRenderResources& resources : perFrameRenderResources) {
-        destroyBuffer(resources.bufferSpheres);
+        destroyBuffer(resources.spheresBuffer);
         vkDestroyAccelerationStructureNV(device, resources.tlas.accelerationStructure, nullptr);
         vkFreeMemory(device, resources.tlas.memory, VK_ALLOCATOR);
     }
     perFrameRenderResources.clear();
 
     for (Vk::AccelerationStructure& as : sphereBLASs) {
-        vkFreeMemory(device, as.memory, VK_ALLOCATOR);
-        vkDestroyAccelerationStructureNV(device, as.accelerationStructure, nullptr);
+        if (as.memory) vkFreeMemory(device, as.memory, VK_ALLOCATOR);
+        if (as.accelerationStructure) vkDestroyAccelerationStructureNV(device, as.accelerationStructure, nullptr);
     }
-    sphereBLASs.clear();
-    sphereAABBs.clear();
     sphereInstances.clear();
+    destroyBuffer(sphereAABBsBuffer);
 
     destroyBuffer(bufferUBO);
     destroyBuffer(shaderBindingTable);

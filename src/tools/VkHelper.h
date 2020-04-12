@@ -1,7 +1,7 @@
 #pragma once
 
 #include "tools/Log.h"
-#include "Models.h"
+#include "Model.h"
 
 #include <glm.hpp>
 #include <vulkan/vulkan.h>
@@ -56,7 +56,7 @@ namespace Vk {
     struct AccelerationStructure {
         VkDeviceMemory memory = VK_NULL_HANDLE;
         VkAccelerationStructureNV accelerationStructure = VK_NULL_HANDLE;
-        uint64_t handle;
+        uint64_t handle = UINT64_MAX;
     };
 
     struct BLASInstance {
@@ -76,7 +76,8 @@ namespace Vk {
         float aabb_maxy;
         float aabb_maxz;
 
-        void init(Models::Sphere sphere);
+        AABB() {}
+        AABB(Model::Sphere sphere);
     };
 
     SwapChainSupportDetails querySwapChainSupport(VkPhysicalDevice device, VkSurfaceKHR surface);

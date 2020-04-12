@@ -1,25 +1,22 @@
 #version 460
 #extension GL_NV_ray_tracing : require
 
+// also defined in Renderer.h
+#define SPHERE_COUNT_PER_TLAS 8
+
 struct Sphere {
-	float aabb_minx;
-	float aabb_miny;
-	float aabb_minz;
-	float aabb_maxx;
-	float aabb_maxy;
-	float aabb_maxz;
+	vec4 posRadius;
 };
-layout(set = 1, binding = 1, std430) readonly buffer Spheres { Sphere spheres[]; };
+layout(set = 1, binding = 1, std430) readonly buffer Spheres { Sphere spheres[SPHERE_COUNT_PER_TLAS]; };
 
 hitAttributeNV vec3 normal;
 
 void main()
 {
-    Sphere sphere = spheres[gl_PrimitiveID];
-    vec3 center = vec3(sphere.aabb_maxx + sphere.aabb_minx,
-					   sphere.aabb_maxy + sphere.aabb_miny,
-					   sphere.aabb_maxz + sphere.aabb_minz) / 2.0;
-    float radius = (sphere.aabb_maxx - sphere.aabb_minx) / 2.0;
+	if (SPHERE_COUNT_PER_TLAS <= gl_InstanceID) return;
+
+    vec3 center = spheres[gl_InstanceID].posRadius.xyz;
+    float radius = spheres[gl_InstanceID].posRadius.w;
 	
     vec3 origin = gl_WorldRayOriginNV;
     vec3 dir = normalize(gl_WorldRayDirectionNV);

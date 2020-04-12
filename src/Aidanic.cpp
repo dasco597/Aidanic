@@ -1,5 +1,5 @@
 #include "Aidanic.h"
-#include "Models.h"
+#include "Model.h"
 #include "tools/Log.h"
 
 #include <gtx/rotate_vector.hpp>
@@ -7,8 +7,6 @@
 #include <chrono>
 
 using namespace std::chrono;
-
-Models::Sphere sphere ;
 
 int main() {
     Aidanic app;
@@ -42,10 +40,6 @@ void Aidanic::init() {
     AID_INFO("IO interface initialized");
 
     updateMatrices();
-
-    std::vector<Models::Sphere> spheres;
-    spheres.push_back(Models::Sphere{ {3.0, 2.0, 1.0}, 0.5 });
-    spheres.push_back(Models::Sphere{ {0.0, 0.0, 0.0}, 1.0 });
 
     renderer.init(this, requiredExtensions, viewInverse, projInverse, viewerPosition);
     AID_INFO("Vulkan renderer RTX initialized");
@@ -92,13 +86,18 @@ void Aidanic::updateImGui() {
     ImGui::NewFrame();
 
     // test window
-    static bool show_demo_window = true, show_another_window = true;
     static ImVec4 clear_color = ImVec4(0.45f, 0.55f, 0.60f, 1.00f);
+    static float pos[3] = { 0.f, 0.f, 0.f };
+    static float radius = 0.5f;
     {
         ImGui::Begin("Aidanic");   // Pass a pointer to our bool variable (the window will have a closing button that will clear the bool when clicked)
-        ImGui::Text("Hello from a window!");
-        if (ImGui::Button("Click Me!"))
-            show_another_window = false;
+        ImGui::Text("Models");
+        ImGui::SliderFloat("x", &pos[0], -2.0f, 2.0f);
+        ImGui::SliderFloat("y", &pos[1], -2.0f, 2.0f);
+        ImGui::SliderFloat("z", &pos[2], -2.0f, 2.0f);
+        ImGui::SliderFloat("radius", &radius, 0.0f, 2.0f);
+        if (ImGui::Button("Add sphere"))
+            renderer.addSphere(Model::Sphere(pos[0], pos[1], pos[2], radius));
         ImGui::End();
     }
 

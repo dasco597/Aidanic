@@ -12,5 +12,10 @@ hitAttributeNV vec3 intersection;
 
 void main()
 {
-    hitValue = vec4(0.3, 0.7, 0.9, 1.0);
+    if (gl_HitKindNV == 0)
+        hitValue = vec4(0.3, 0.7, 0.9, 1.0);
+    else if (gl_HitKindNV == 1)
+        hitValue = vec4(0.9, 0.3, 0.7, 1.0);
+    else
+        hitValue = vec4(0.7, 0.9, 0.3, 1.0);
 }

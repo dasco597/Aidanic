@@ -41,7 +41,7 @@ std::string Vk::_errorString(VkResult res)
     }
 }
 
-void Vk::AABB::init(Models::Sphere sphere) {
+Vk::AABB::AABB(Model::Sphere sphere) {
     aabb_minx = sphere.pos[0] - sphere.radius;
     aabb_miny = sphere.pos[1] - sphere.radius;
     aabb_minz = sphere.pos[2] - sphere.radius;

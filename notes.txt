@@ -1,6 +1,7 @@
 todo:
 
 multiple spheres
+sdf intersect shader
 add sphere color
 ssbo with lights
 add spheres with gui
