@@ -15,7 +15,6 @@ struct Sphere {
 layout(set = 1, binding = 1, std430) readonly buffer Spheres { Sphere spheres[SPHERE_COUNT_PER_TLAS]; };
 
 struct Hit_Payload {
-	vec4 intersection;
 	vec4 color;
 	vec4 normal;
 };
@@ -30,7 +29,7 @@ void main()
 	if (gl_InstanceID >= SPHERE_COUNT_PER_TLAS) return;
 	
     vec3 ray_o = gl_WorldRayOriginNV;
-    vec3 ray_d = normalize(gl_WorldRayDirectionNV);
+    vec3 ray_d = normalize(gl_WorldRayDirectionNV); // todo need to normalize?
 
     vec3 center = spheres[gl_InstanceID].pos_radius.xyz;
     float radius = spheres[gl_InstanceID].pos_radius.w;
@@ -41,7 +40,6 @@ void main()
 		float dist = sdf_sphere(point, center, radius);
 
 		if (dist < EPSILON) {
-			hit_payload.intersection = vec4(point, 1.0);
 			hit_payload.normal = vec4(point - center, 1.0);
 			hit_payload.color = spheres[gl_InstanceID].color;
 			reportIntersectionNV(depth, 0u);

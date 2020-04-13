@@ -19,14 +19,14 @@ void main()
 {
 	vec2 uv = (vec2(gl_LaunchIDNV.xy) + vec2(0.5) - vec2(gl_LaunchSizeNV.xy) / 2) / vec2(gl_LaunchSizeNV.x);
 	vec4 target = cam.projInverse * vec4(uv.x, -uv.y, 1, 1);
-	vec4 direction = cam.viewInverse * vec4(normalize(target.xyz / target.w), 0) ;
+	vec4 direction = cam.viewInverse * vec4(normalize(target.xyz / target.w), 0);
 
 	uint rayFlags = gl_RayFlagsOpaqueNV;
 	uint cullMask = 0xff;
 	float tmin = 0.001;
 	float tmax = 10000.0;
 
-	traceNV(tlas, rayFlags, cullMask, 0, 0, 0, cam.position.xyz, tmin, direction.xyz, tmax, 0);
+	traceNV(tlas, rayFlags, cullMask, 0, 0, 0, cam.position.xyz, tmin, normalize(direction.xyz), tmax, 0);
 
 	imageStore(renderImage, ivec2(gl_LaunchIDNV.xy), ray_payload.color);
 }

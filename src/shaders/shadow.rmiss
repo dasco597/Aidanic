@@ -2,11 +2,11 @@
 #extension GL_NV_ray_tracing : require
 
 struct ShadowPayload {
-    bool inShadow;
+    bool in_shadow;
 };
-layout(location = 1) rayPayloadInNV ShadowPayload shadow_payload;
+layout(location = 2) rayPayloadInNV ShadowPayload shadow_payload;
 
 void main()
 {
-    shadow_payload.inShadow = false;
+    shadow_payload.in_shadow = false;
 }

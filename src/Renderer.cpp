@@ -17,19 +17,34 @@ const bool enableValidationLayers = true;
 
 // shader files (relative to assets folder, _CONFIG::getAssetsPath())
 #define SHADER_SRC_RAYGEN "spirv/raygen.rgen.spv"
-#define SHADER_SRC_SPHERE_INTERSECTION "spirv/sphere.rint.spv"
-#define SHADER_SRC_CLOSEST_HIT "spirv/closesthit.rchit.spv"
 #define SHADER_SRC_MISS_XYZ "spirv/background_xyz.rmiss.spv"
-#define SHADER_SRC_MISS_BLACK "spirv/background_black.rmiss.spv"
+#define SHADER_SRC_MISS_SHADOW "spirv/shadow.rmiss.spv"
+//#define SHADER_SRC_MISS_BLACK "spirv/background_black.rmiss.spv"
+#define SHADER_SRC_CLOSEST_HIT_SCENE "spirv/closesthit.rchit.spv"
+#define SHADER_SRC_CLOSEST_HIT_SHADOW "spirv/shadow.rchit.spv"
+#define SHADER_SRC_INTERSECTION_SPHERE "spirv/sphere.rint.spv"
+#define SHADER_SRC_INTERSECTION_SHADOW "spirv/shadow.rint.spv"
 
-// shader indices
+// shader stage indices
 enum {
-    INDEX_RAYGEN,
-    INDEX_SPHERE_INTERSECTION,
-    INDEX_CLOSEST_HIT,
-    INDEX_MISS_XYZ,
-    INDEX_MISS_BLACK,
-    SHADER_COUNT
+    STAGE_RAYGEN,
+    STAGE_MISS_XYZ,
+    STAGE_MISS_SHADOW,
+    STAGE_CLOSEST_HIT_SCENE,
+    STAGE_CLOSEST_HIT_SHADOW,
+    STAGE_INTERSECTION_SPHERE,
+    STAGE_INTERSECTION_SHADOW,
+    STAGE_COUNT
+};
+
+// shader group indices
+enum {
+    GROUP_RAYGEN,
+    GROUP_MISS_SCENE,
+    GROUP_MISS_SHADOW,
+    GROUP_CLOSEST_HIT_SCENE,
+    GROUP_CLOSEST_HIT_SHADOW,
+    GROUP_COUNT
 };
 
 // INITIALIZATION
@@ -424,7 +439,7 @@ void Renderer::createDescriptorSetLayouts() {
         layoutBindingAccelerationStructure.binding = 0;
         layoutBindingAccelerationStructure.descriptorType = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_NV;
         layoutBindingAccelerationStructure.descriptorCount = 1;
-        layoutBindingAccelerationStructure.stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_NV | VK_SHADER_STAGE_INTERSECTION_BIT_NV;
+        layoutBindingAccelerationStructure.stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_NV | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;
 
         VkDescriptorSetLayoutBinding layoutBindingSpheresBuffer{};
         layoutBindingSpheresBuffer.binding = 1;
@@ -453,16 +468,18 @@ void Renderer::createRayTracingPipeline() {
     pipelineLayoutCI.pSetLayouts = descriptorLayouts;
     vkCreatePipelineLayout(device, &pipelineLayoutCI, VK_ALLOCATOR, &pipelineLayout);
 
-    std::array<VkPipelineShaderStageCreateInfo, SHADER_COUNT> shaderStages;
-    std::array<VkShaderModule, SHADER_COUNT> shaderModules;
-    shaderStages[INDEX_RAYGEN] = Vk::loadShader(device, std::string(_CONFIG::getAssetsPath()) + std::string(SHADER_SRC_RAYGEN), VK_SHADER_STAGE_RAYGEN_BIT_NV, shaderModules[INDEX_RAYGEN]);
-    shaderStages[INDEX_SPHERE_INTERSECTION] = Vk::loadShader(device, std::string(_CONFIG::getAssetsPath()) + std::string(SHADER_SRC_SPHERE_INTERSECTION), VK_SHADER_STAGE_INTERSECTION_BIT_NV, shaderModules[INDEX_SPHERE_INTERSECTION]);
-    shaderStages[INDEX_CLOSEST_HIT] = Vk::loadShader(device, std::string(_CONFIG::getAssetsPath()) + std::string(SHADER_SRC_CLOSEST_HIT), VK_SHADER_STAGE_CLOSEST_HIT_BIT_NV, shaderModules[INDEX_CLOSEST_HIT]);
-    shaderStages[INDEX_MISS_XYZ] = Vk::loadShader(device, std::string(_CONFIG::getAssetsPath()) + std::string(SHADER_SRC_MISS_XYZ), VK_SHADER_STAGE_MISS_BIT_NV, shaderModules[INDEX_MISS_XYZ]);
-    shaderStages[INDEX_MISS_BLACK] = Vk::loadShader(device, std::string(_CONFIG::getAssetsPath()) + std::string(SHADER_SRC_MISS_BLACK), VK_SHADER_STAGE_MISS_BIT_NV, shaderModules[INDEX_MISS_BLACK]);
+    std::array<VkShaderModule, STAGE_COUNT> shaderModules;
+    std::array<VkPipelineShaderStageCreateInfo, STAGE_COUNT> shaderStages;
+    shaderStages[STAGE_RAYGEN]              = Vk::loadShader(device, std::string(_CONFIG::getAssetsPath()) + std::string(SHADER_SRC_RAYGEN),              VK_SHADER_STAGE_RAYGEN_BIT_NV,       shaderModules[STAGE_RAYGEN]);
+    shaderStages[STAGE_MISS_XYZ]            = Vk::loadShader(device, std::string(_CONFIG::getAssetsPath()) + std::string(SHADER_SRC_MISS_XYZ),            VK_SHADER_STAGE_MISS_BIT_NV,         shaderModules[STAGE_MISS_XYZ]);
+    shaderStages[STAGE_MISS_SHADOW]         = Vk::loadShader(device, std::string(_CONFIG::getAssetsPath()) + std::string(SHADER_SRC_MISS_SHADOW),         VK_SHADER_STAGE_MISS_BIT_NV,         shaderModules[STAGE_MISS_SHADOW]);
+    shaderStages[STAGE_CLOSEST_HIT_SCENE]   = Vk::loadShader(device, std::string(_CONFIG::getAssetsPath()) + std::string(SHADER_SRC_CLOSEST_HIT_SCENE),   VK_SHADER_STAGE_CLOSEST_HIT_BIT_NV,  shaderModules[STAGE_CLOSEST_HIT_SCENE]);
+    shaderStages[STAGE_CLOSEST_HIT_SHADOW]  = Vk::loadShader(device, std::string(_CONFIG::getAssetsPath()) + std::string(SHADER_SRC_CLOSEST_HIT_SHADOW),  VK_SHADER_STAGE_CLOSEST_HIT_BIT_NV,  shaderModules[STAGE_CLOSEST_HIT_SHADOW]);
+    shaderStages[STAGE_INTERSECTION_SPHERE] = Vk::loadShader(device, std::string(_CONFIG::getAssetsPath()) + std::string(SHADER_SRC_INTERSECTION_SPHERE), VK_SHADER_STAGE_INTERSECTION_BIT_NV, shaderModules[STAGE_INTERSECTION_SPHERE]);
+    shaderStages[STAGE_INTERSECTION_SHADOW] = Vk::loadShader(device, std::string(_CONFIG::getAssetsPath()) + std::string(SHADER_SRC_INTERSECTION_SHADOW), VK_SHADER_STAGE_INTERSECTION_BIT_NV, shaderModules[STAGE_INTERSECTION_SHADOW]);
 
     // ray tracing shader groups
-    std::array<VkRayTracingShaderGroupCreateInfoNV, SHADER_COUNT> shaderGroups{};
+    std::array<VkRayTracingShaderGroupCreateInfoNV, GROUP_COUNT> shaderGroups{};
     for (auto& group : shaderGroups) {
         group.sType = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_NV;
         group.generalShader = VK_SHADER_UNUSED_NV;
@@ -470,22 +487,28 @@ void Renderer::createRayTracingPipeline() {
         group.anyHitShader = VK_SHADER_UNUSED_NV;
         group.intersectionShader = VK_SHADER_UNUSED_NV;
     }
+    
+    // ray generation
+    shaderGroups[GROUP_RAYGEN].type = VK_RAY_TRACING_SHADER_GROUP_TYPE_GENERAL_NV;
+    shaderGroups[GROUP_RAYGEN].generalShader = STAGE_RAYGEN;
 
-    shaderGroups[INDEX_RAYGEN].type = VK_RAY_TRACING_SHADER_GROUP_TYPE_GENERAL_NV;
-    shaderGroups[INDEX_RAYGEN].generalShader = INDEX_RAYGEN;
+    // miss scene
+    shaderGroups[GROUP_MISS_SCENE].type = VK_RAY_TRACING_SHADER_GROUP_TYPE_GENERAL_NV;
+    shaderGroups[GROUP_MISS_SCENE].generalShader = STAGE_MISS_XYZ;
 
-    shaderGroups[INDEX_SPHERE_INTERSECTION].type = VK_RAY_TRACING_SHADER_GROUP_TYPE_PROCEDURAL_HIT_GROUP_NV;
-    shaderGroups[INDEX_SPHERE_INTERSECTION].intersectionShader = INDEX_SPHERE_INTERSECTION;
+    // miss shadow
+    shaderGroups[GROUP_MISS_SHADOW].type = VK_RAY_TRACING_SHADER_GROUP_TYPE_GENERAL_NV;
+    shaderGroups[GROUP_MISS_SHADOW].generalShader = STAGE_MISS_SHADOW;
 
-    shaderGroups[INDEX_CLOSEST_HIT].type = VK_RAY_TRACING_SHADER_GROUP_TYPE_PROCEDURAL_HIT_GROUP_NV;
-    shaderGroups[INDEX_CLOSEST_HIT].closestHitShader = INDEX_CLOSEST_HIT;
-    shaderGroups[INDEX_CLOSEST_HIT].intersectionShader = INDEX_SPHERE_INTERSECTION;
+    // closest hit scene
+    shaderGroups[GROUP_CLOSEST_HIT_SCENE].type = VK_RAY_TRACING_SHADER_GROUP_TYPE_PROCEDURAL_HIT_GROUP_NV;
+    shaderGroups[GROUP_CLOSEST_HIT_SCENE].closestHitShader = STAGE_CLOSEST_HIT_SCENE;
+    shaderGroups[GROUP_CLOSEST_HIT_SCENE].intersectionShader = STAGE_INTERSECTION_SPHERE;
 
-    shaderGroups[INDEX_MISS_XYZ].type = VK_RAY_TRACING_SHADER_GROUP_TYPE_GENERAL_NV;
-    shaderGroups[INDEX_MISS_XYZ].generalShader = INDEX_MISS_XYZ;
-
-    shaderGroups[INDEX_MISS_BLACK].type = VK_RAY_TRACING_SHADER_GROUP_TYPE_GENERAL_NV;
-    shaderGroups[INDEX_MISS_BLACK].generalShader = INDEX_MISS_BLACK;
+    // closest hit shadow todo: not used
+    shaderGroups[GROUP_CLOSEST_HIT_SHADOW].type = VK_RAY_TRACING_SHADER_GROUP_TYPE_PROCEDURAL_HIT_GROUP_NV;
+    shaderGroups[GROUP_CLOSEST_HIT_SHADOW].closestHitShader = STAGE_CLOSEST_HIT_SHADOW;
+    shaderGroups[GROUP_CLOSEST_HIT_SHADOW].intersectionShader = STAGE_INTERSECTION_SPHERE;
 
     VkRayTracingPipelineCreateInfoNV rayPipelineCI{};
     rayPipelineCI.sType = VK_STRUCTURE_TYPE_RAY_TRACING_PIPELINE_CREATE_INFO_NV;
@@ -502,9 +525,9 @@ void Renderer::createRayTracingPipeline() {
 }
 
 void Renderer::createShaderBindingTable() {
-    uint32_t sbtSize = rayTracingProperties.shaderGroupHandleSize * SHADER_COUNT;
+    uint32_t sbtSize = rayTracingProperties.shaderGroupHandleSize * GROUP_COUNT;
     uint8_t* shaderGroupHandleStorage = new uint8_t[sbtSize];
-    VK_CHECK_RESULT(vkGetRayTracingShaderGroupHandlesNV(device, pipeline, 0, SHADER_COUNT, sbtSize, shaderGroupHandleStorage), "failed to get ray tracing shader group handles");
+    VK_CHECK_RESULT(vkGetRayTracingShaderGroupHandlesNV(device, pipeline, 0, GROUP_COUNT, sbtSize, shaderGroupHandleStorage), "failed to get ray tracing shader group handles");
 
     createBuffer(shaderBindingTable, VK_BUFFER_USAGE_RAY_TRACING_BIT_NV | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT, sbtSize);
     uploadBufferHostVisible(shaderBindingTable, shaderGroupHandleStorage, sbtSize);
@@ -993,13 +1016,13 @@ void Renderer::updateModelDescriptorSet(uint32_t swapchainIndex) {
 
 void Renderer::recordCommandBufferRender(uint32_t swapchainIndex) {
     // shader binding offsets
-    VkDeviceSize bindingOffsetRayGenShader = static_cast<VkDeviceSize>(rayTracingProperties.shaderGroupHandleSize * INDEX_RAYGEN);
-    VkDeviceSize bindingOffsetHitShader = static_cast<VkDeviceSize>(rayTracingProperties.shaderGroupHandleSize * INDEX_CLOSEST_HIT);
-    VkDeviceSize bindingOffsetMissShader = 0;
-    switch (backgroundMode) {
-    case BackgroundMode::XYZ: bindingOffsetMissShader = static_cast<VkDeviceSize>(rayTracingProperties.shaderGroupHandleSize * INDEX_MISS_XYZ); break;
-    case BackgroundMode::BLACK: bindingOffsetMissShader = static_cast<VkDeviceSize>(rayTracingProperties.shaderGroupHandleSize * INDEX_MISS_BLACK); break;
-    }
+    VkDeviceSize bindingOffsetRayGenShader = static_cast<VkDeviceSize>(rayTracingProperties.shaderGroupHandleSize) * GROUP_RAYGEN;
+    VkDeviceSize bindingOffsetMissShader   = static_cast<VkDeviceSize>(rayTracingProperties.shaderGroupHandleSize) * GROUP_MISS_SCENE;
+    VkDeviceSize bindingOffsetHitShader    = static_cast<VkDeviceSize>(rayTracingProperties.shaderGroupHandleSize) * GROUP_CLOSEST_HIT_SCENE;
+    //switch (backgroundMode) {
+    //case BackgroundMode::XYZ: bindingOffsetMissShader = static_cast<VkDeviceSize>(rayTracingProperties.shaderGroupHandleSize * INDEX_MISS_XYZ); break;
+    //case BackgroundMode::BLACK: bindingOffsetMissShader = static_cast<VkDeviceSize>(rayTracingProperties.shaderGroupHandleSize * INDEX_MISS_BLACK); break;
+    //}
     VkDeviceSize bindingStride = static_cast<VkDeviceSize>(rayTracingProperties.shaderGroupHandleSize);
 
     VkCommandBufferBeginInfo beginInfo{};
