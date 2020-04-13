@@ -90,8 +90,6 @@ void Aidanic::updateImGui() {
     static float sphereRadius = 0.5f;
     static glm::vec4 sphereColor = glm::vec4(1.0f);
 
-    static bool blackBackground = false;
-
     static ImVec4 clear_color = ImVec4(0.45f, 0.55f, 0.60f, 1.00f);
     {
         ImGui::Begin("Models");   // Pass a pointer to our bool variable (the window will have a closing button that will clear the bool when clicked)
@@ -106,18 +104,6 @@ void Aidanic::updateImGui() {
         if (ImGui::Button("Add sphere"))
             renderer.addSphere(Model::Sphere(spherePos, sphereRadius, sphereColor));
         
-        if (blackBackground) {
-            if (ImGui::Button("Set background rgb = xyz")) {
-                renderer.setBackgroundMode(BackgroundMode::XYZ);
-                blackBackground = false;
-            }
-        } else {
-            if (ImGui::Button("Set background black")) {
-                renderer.setBackgroundMode(BackgroundMode::BLACK);
-                blackBackground = true;
-            }
-        }
-
         ImGui::End();
     }
 

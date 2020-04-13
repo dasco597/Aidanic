@@ -37,7 +37,7 @@ private:
 
     VkCommandPool commandPool;
     struct PerFrame {
-        Vk::Buffer vertexBuffer, indexBuffer;
+        Vk::BufferHostVisible vertexBuffer, indexBuffer;
         VkCommandBuffer commandBuffer;
         bool render = false;
     };
@@ -56,5 +56,4 @@ private:
     void createCommandBuffers();
 
     void setupRenderState(VkCommandBuffer commandBuffer, PerFrame& perFrameResources, int fb_width, int fb_height, ImDrawData* draw_data);
-    void recreateBuffer(Vk::Buffer& buffer, VkDeviceSize newSize, VkBufferUsageFlags usage);
 };

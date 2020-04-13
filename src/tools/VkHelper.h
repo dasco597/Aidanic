@@ -36,20 +36,44 @@ namespace Vk {
         std::vector<VkPresentModeKHR> presentModes;
     };
 
-    struct Buffer {
+    struct _BufferCommon {
         VkBuffer buffer = VK_NULL_HANDLE;
         VkDeviceMemory memory = VK_NULL_HANDLE;
         VkDeviceSize size = static_cast<VkDeviceSize>(0);
         VkDeviceSize dynamicStride = 0;
+
+        void destroy(VkDevice device);
+    protected:
+        void createCommon(VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkDeviceSize size, VkDevice device, VkPhysicalDevice physicalDevice);
+    };
+
+    struct BufferDeviceLocal : _BufferCommon {
+        void create(VkBufferUsageFlags usage, VkDeviceSize size, VkDevice device, VkPhysicalDevice physicalDevice);
+        void upload(void* data, VkDeviceSize size, VkDeviceSize bufferOffset, VkDevice device, VkPhysicalDevice physicalDevice, VkQueue queue, VkCommandPool commandPool);
+    };
+
+    struct BufferHostVisible : _BufferCommon {
+        void create(VkBufferUsageFlags usage, VkDeviceSize size, VkDevice device, VkPhysicalDevice physicalDevice);
+        void upload(void* data, VkDeviceSize size, VkDeviceSize bufferOffset, VkDevice device);
     };
 
     struct StorageImage {
-        VkDeviceMemory memory = VK_NULL_HANDLE;
         VkImage image = VK_NULL_HANDLE;
         VkImageView view = VK_NULL_HANDLE;
+        VkDeviceMemory memory = VK_NULL_HANDLE;
         VkFormat format;
         VkExtent2D extent;
 
+        void destroy(VkDevice device);
+    };
+
+    struct Texture {
+        VkImage image = VK_NULL_HANDLE;
+        VkDeviceMemory memory = VK_NULL_HANDLE;
+        VkFormat format;
+        VkExtent2D extent;
+
+        void create(std::string path);
         void destroy(VkDevice device);
     };
 

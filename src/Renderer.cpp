@@ -16,19 +16,18 @@ const bool enableValidationLayers = true;
 // TODO replace nullptr with VK_ALLOCATOR where relevant
 
 // shader files (relative to assets folder, _CONFIG::getAssetsPath())
-#define SHADER_SRC_RAYGEN "spirv/raygen.rgen.spv"
-#define SHADER_SRC_MISS_XYZ "spirv/background_xyz.rmiss.spv"
-#define SHADER_SRC_MISS_SHADOW "spirv/shadow.rmiss.spv"
-//#define SHADER_SRC_MISS_BLACK "spirv/background_black.rmiss.spv"
-#define SHADER_SRC_CLOSEST_HIT_SCENE "spirv/closesthit.rchit.spv"
-#define SHADER_SRC_CLOSEST_HIT_SHADOW "spirv/shadow.rchit.spv"
-#define SHADER_SRC_INTERSECTION_SPHERE "spirv/sphere.rint.spv"
-#define SHADER_SRC_INTERSECTION_SHADOW "spirv/shadow.rint.spv"
+#define SHADER_SRC_RAYGEN               "spirv/raygen.rgen.spv"
+#define SHADER_SRC_MISS_BACKGROUND      "spirv/background.rmiss.spv"
+#define SHADER_SRC_MISS_SHADOW          "spirv/shadow.rmiss.spv"
+#define SHADER_SRC_CLOSEST_HIT_SCENE    "spirv/closesthit.rchit.spv"
+#define SHADER_SRC_CLOSEST_HIT_SHADOW   "spirv/shadow.rchit.spv"
+#define SHADER_SRC_INTERSECTION_SPHERE  "spirv/sphere.rint.spv"
+#define SHADER_SRC_INTERSECTION_SHADOW  "spirv/shadow.rint.spv"
 
 // shader stage indices
 enum {
     STAGE_RAYGEN,
-    STAGE_MISS_XYZ,
+    STAGE_MISS_BACKGROUND,
     STAGE_MISS_SHADOW,
     STAGE_CLOSEST_HIT_SCENE,
     STAGE_CLOSEST_HIT_SHADOW,
@@ -40,7 +39,7 @@ enum {
 // shader group indices
 enum {
     GROUP_RAYGEN,
-    GROUP_MISS_SCENE,
+    GROUP_MISS_BACKGROUND,
     GROUP_MISS_SHADOW,
     GROUP_CLOSEST_HIT_SCENE,
     GROUP_CLOSEST_HIT_SHADOW,
@@ -383,8 +382,8 @@ void Renderer::initPerFrameRenderResources() {
 
         // init spheres buffer
 
-        createBuffer(perFrameRenderResources[i].spheresBuffer, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, sizeof(Model::Sphere) * SPHERE_COUNT_PER_TLAS);
-        uploadBufferDeviceLocal(perFrameRenderResources[i].spheresBuffer, spheres.data(), sizeof(Model::Sphere) * spheres.size());
+        perFrameRenderResources[i].spheresBuffer.create(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, sizeof(Model::Sphere) * SPHERE_COUNT_PER_TLAS, device, physicalDevice);
+        perFrameRenderResources[i].spheresBuffer.upload(spheres.data(), sizeof(Model::Sphere) * spheres.size(), 0, device, physicalDevice, queues.graphics, commandPool);
 
         // create descriptor set
 
@@ -400,12 +399,12 @@ void Renderer::initPerFrameRenderResources() {
 }
 
 void Renderer::createAABBBuffers() {
-    createBuffer(sphereAABBsBuffer, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, sizeof(Vk::AABB) * SPHERE_COUNT_PER_TLAS);
+    sphereAABBsBuffer.create(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, sizeof(Vk::AABB) * SPHERE_COUNT_PER_TLAS, device, physicalDevice);
 }
 
 void Renderer::createUBO(glm::mat4 viewInverse, glm::mat4 projInverse, glm::vec3 cameraPos) {
     bufferUBO.dynamicStride = getUBOOffsetAligned(sizeof(UniformData));
-    createBuffer(bufferUBO, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT, static_cast<VkDeviceSize>(swapchain.numImages) * bufferUBO.dynamicStride);
+    bufferUBO.create(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, static_cast<VkDeviceSize>(swapchain.numImages) * bufferUBO.dynamicStride, device, physicalDevice);
     for (int s = 0; s < swapchain.numImages; s++) updateUniformBuffer(viewInverse, projInverse, cameraPos, s);
 }
 
@@ -471,7 +470,7 @@ void Renderer::createRayTracingPipeline() {
     std::array<VkShaderModule, STAGE_COUNT> shaderModules;
     std::array<VkPipelineShaderStageCreateInfo, STAGE_COUNT> shaderStages;
     shaderStages[STAGE_RAYGEN]              = Vk::loadShader(device, std::string(_CONFIG::getAssetsPath()) + std::string(SHADER_SRC_RAYGEN),              VK_SHADER_STAGE_RAYGEN_BIT_NV,       shaderModules[STAGE_RAYGEN]);
-    shaderStages[STAGE_MISS_XYZ]            = Vk::loadShader(device, std::string(_CONFIG::getAssetsPath()) + std::string(SHADER_SRC_MISS_XYZ),            VK_SHADER_STAGE_MISS_BIT_NV,         shaderModules[STAGE_MISS_XYZ]);
+    shaderStages[STAGE_MISS_BACKGROUND]     = Vk::loadShader(device, std::string(_CONFIG::getAssetsPath()) + std::string(SHADER_SRC_MISS_BACKGROUND),     VK_SHADER_STAGE_MISS_BIT_NV,         shaderModules[STAGE_MISS_BACKGROUND]);
     shaderStages[STAGE_MISS_SHADOW]         = Vk::loadShader(device, std::string(_CONFIG::getAssetsPath()) + std::string(SHADER_SRC_MISS_SHADOW),         VK_SHADER_STAGE_MISS_BIT_NV,         shaderModules[STAGE_MISS_SHADOW]);
     shaderStages[STAGE_CLOSEST_HIT_SCENE]   = Vk::loadShader(device, std::string(_CONFIG::getAssetsPath()) + std::string(SHADER_SRC_CLOSEST_HIT_SCENE),   VK_SHADER_STAGE_CLOSEST_HIT_BIT_NV,  shaderModules[STAGE_CLOSEST_HIT_SCENE]);
     shaderStages[STAGE_CLOSEST_HIT_SHADOW]  = Vk::loadShader(device, std::string(_CONFIG::getAssetsPath()) + std::string(SHADER_SRC_CLOSEST_HIT_SHADOW),  VK_SHADER_STAGE_CLOSEST_HIT_BIT_NV,  shaderModules[STAGE_CLOSEST_HIT_SHADOW]);
@@ -493,8 +492,8 @@ void Renderer::createRayTracingPipeline() {
     shaderGroups[GROUP_RAYGEN].generalShader = STAGE_RAYGEN;
 
     // miss scene
-    shaderGroups[GROUP_MISS_SCENE].type = VK_RAY_TRACING_SHADER_GROUP_TYPE_GENERAL_NV;
-    shaderGroups[GROUP_MISS_SCENE].generalShader = STAGE_MISS_XYZ;
+    shaderGroups[GROUP_MISS_BACKGROUND].type = VK_RAY_TRACING_SHADER_GROUP_TYPE_GENERAL_NV;
+    shaderGroups[GROUP_MISS_BACKGROUND].generalShader = STAGE_MISS_BACKGROUND;
 
     // miss shadow
     shaderGroups[GROUP_MISS_SHADOW].type = VK_RAY_TRACING_SHADER_GROUP_TYPE_GENERAL_NV;
@@ -529,8 +528,8 @@ void Renderer::createShaderBindingTable() {
     uint8_t* shaderGroupHandleStorage = new uint8_t[sbtSize];
     VK_CHECK_RESULT(vkGetRayTracingShaderGroupHandlesNV(device, pipeline, 0, GROUP_COUNT, sbtSize, shaderGroupHandleStorage), "failed to get ray tracing shader group handles");
 
-    createBuffer(shaderBindingTable, VK_BUFFER_USAGE_RAY_TRACING_BIT_NV | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT, sbtSize);
-    uploadBufferHostVisible(shaderBindingTable, shaderGroupHandleStorage, sbtSize);
+    shaderBindingTable.create(VK_BUFFER_USAGE_RAY_TRACING_BIT_NV | VK_BUFFER_USAGE_TRANSFER_DST_BIT, sbtSize, device, physicalDevice);
+    shaderBindingTable.upload(shaderGroupHandleStorage, sbtSize, 0, device);
 }
 
 void Renderer::createDescriptorSetRender() {
@@ -792,7 +791,7 @@ int Renderer::addSphere(Model::Sphere sphere) {
     Vk::AABB sphereAABB(sphere);
 
     // todo need VK_BUFFER_USAGE_STORAGE_BUFFER_BIT?
-    uploadBufferDeviceLocal(sphereAABBsBuffer, &sphereAABB, sizeof(Vk::AABB), sizeof(Vk::AABB) * sphereIndex);
+    sphereAABBsBuffer.upload(&sphereAABB, sizeof(Vk::AABB), sizeof(Vk::AABB) * sphereIndex, device, physicalDevice, queues.graphics, commandPool);
 
     VkGeometryAABBNV geometryAabbSphere = {};
     geometryAabbSphere.sType = VK_STRUCTURE_TYPE_GEOMETRY_AABB_NV;
@@ -832,8 +831,8 @@ int Renderer::addSphere(Model::Sphere sphere) {
     memoryRequirementsInfo.accelerationStructure = sphereBLASs[sphereIndex].accelerationStructure;
     vkGetAccelerationStructureMemoryRequirementsNV(device, &memoryRequirementsInfo, &blasMemoryrequirements);
 
-    Vk::Buffer scratchBuffer;
-    createBuffer(scratchBuffer, VK_BUFFER_USAGE_RAY_TRACING_BIT_NV, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, blasMemoryrequirements.memoryRequirements.size);
+    Vk::BufferDeviceLocal scratchBuffer;
+    scratchBuffer.create(VK_BUFFER_USAGE_RAY_TRACING_BIT_NV, blasMemoryrequirements.memoryRequirements.size, device, physicalDevice);
 
     VkCommandBuffer commandBufferBuild = Vk::beginSingleTimeCommands(device, commandPool);
 
@@ -857,7 +856,7 @@ int Renderer::addSphere(Model::Sphere sphere) {
 
     Vk::endSingleTimeCommands(device, commandBufferBuild, queues.graphics, commandPool);
 
-    destroyBuffer(scratchBuffer);
+    scratchBuffer.destroy(device);
 
     sphereCount++;
 
@@ -888,11 +887,6 @@ int Renderer::addSphere(Model::Sphere sphere) {
     return 0;
 }
 
-void Renderer::setBackgroundMode(BackgroundMode bgm) {
-    backgroundMode = bgm;
-    for (int i = 0; i < recordCommandBufferRenderSignals.size(); i++) recordCommandBufferRenderSignals[i] = true;
-}
-
 void Renderer::updateModels(uint32_t swapchainIndex) {
     PerFrameRenderResources& resources = perFrameRenderResources[swapchainIndex];
     if (!resources.updateSpheres) return;
@@ -911,11 +905,11 @@ void Renderer::updateModels(uint32_t swapchainIndex) {
 void Renderer::updateModelTLAS(uint32_t swapchainIndex) {
     Vk::AccelerationStructure& tlas = perFrameRenderResources[swapchainIndex].tlas;
 
-    Vk::Buffer instanceBuffer;
+    Vk::BufferHostVisible instanceBuffer;
 
     if (sphereInstances.size() != 0) {
-        createBuffer(instanceBuffer, VK_BUFFER_USAGE_RAY_TRACING_BIT_NV, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT, sizeof(Vk::BLASInstance) * sphereInstances.size());
-        uploadBufferHostVisible(instanceBuffer, sphereInstances.data(), sizeof(Vk::BLASInstance) * sphereInstances.size());
+        instanceBuffer.create(VK_BUFFER_USAGE_RAY_TRACING_BIT_NV, sizeof(Vk::BLASInstance) * sphereInstances.size(), device, physicalDevice);
+        instanceBuffer.upload(sphereInstances.data(), sizeof(Vk::BLASInstance) * sphereInstances.size(), 0, device);
     }
 
     // create top-level acceleration structure
@@ -932,8 +926,8 @@ void Renderer::updateModelTLAS(uint32_t swapchainIndex) {
     memoryRequirementsInfo.accelerationStructure = tlas.accelerationStructure;
     vkGetAccelerationStructureMemoryRequirementsNV(device, &memoryRequirementsInfo, &memReqTopLevelAS);
 
-    Vk::Buffer scratchBuffer;
-    createBuffer(scratchBuffer, VK_BUFFER_USAGE_RAY_TRACING_BIT_NV, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, memReqTopLevelAS.memoryRequirements.size);
+    Vk::BufferDeviceLocal scratchBuffer;
+    scratchBuffer.create(VK_BUFFER_USAGE_RAY_TRACING_BIT_NV, memReqTopLevelAS.memoryRequirements.size, device, physicalDevice);
 
     // build top-level acceleration structure
 
@@ -959,8 +953,8 @@ void Renderer::updateModelTLAS(uint32_t swapchainIndex) {
 
     Vk::endSingleTimeCommands(device, cmdBuffer, queues.compute, commandPool);
 
-    destroyBuffer(instanceBuffer);
-    destroyBuffer(scratchBuffer);
+    instanceBuffer.destroy(device);
+    scratchBuffer.destroy(device);
 }
 
 void Renderer::updateSpheresBuffer(uint32_t swapchainIndex) {
@@ -968,7 +962,7 @@ void Renderer::updateSpheresBuffer(uint32_t swapchainIndex) {
         if (SPHERE_COUNT_PER_TLAS <= sphereIndex) {
             AID_ERROR("trying to update sphere index outside of SPHERE_COUNT_PER_TLAS!");
         }
-        uploadBufferDeviceLocal(perFrameRenderResources[swapchainIndex].spheresBuffer, &spheres[sphereIndex], sizeof(Model::Sphere), sizeof(Model::Sphere) * sphereIndex);
+        perFrameRenderResources[swapchainIndex].spheresBuffer.upload(&spheres[sphereIndex], sizeof(Model::Sphere), sizeof(Model::Sphere) * sphereIndex, device, physicalDevice, queues.graphics, commandPool);
     }
     perFrameRenderResources[swapchainIndex].updateSphereIndices.clear();
 }
@@ -1017,12 +1011,8 @@ void Renderer::updateModelDescriptorSet(uint32_t swapchainIndex) {
 void Renderer::recordCommandBufferRender(uint32_t swapchainIndex) {
     // shader binding offsets
     VkDeviceSize bindingOffsetRayGenShader = static_cast<VkDeviceSize>(rayTracingProperties.shaderGroupHandleSize) * GROUP_RAYGEN;
-    VkDeviceSize bindingOffsetMissShader   = static_cast<VkDeviceSize>(rayTracingProperties.shaderGroupHandleSize) * GROUP_MISS_SCENE;
+    VkDeviceSize bindingOffsetMissShader   = static_cast<VkDeviceSize>(rayTracingProperties.shaderGroupHandleSize) * GROUP_MISS_BACKGROUND;
     VkDeviceSize bindingOffsetHitShader    = static_cast<VkDeviceSize>(rayTracingProperties.shaderGroupHandleSize) * GROUP_CLOSEST_HIT_SCENE;
-    //switch (backgroundMode) {
-    //case BackgroundMode::XYZ: bindingOffsetMissShader = static_cast<VkDeviceSize>(rayTracingProperties.shaderGroupHandleSize * INDEX_MISS_XYZ); break;
-    //case BackgroundMode::BLACK: bindingOffsetMissShader = static_cast<VkDeviceSize>(rayTracingProperties.shaderGroupHandleSize * INDEX_MISS_BLACK); break;
-    //}
     VkDeviceSize bindingStride = static_cast<VkDeviceSize>(rayTracingProperties.shaderGroupHandleSize);
 
     VkCommandBufferBeginInfo beginInfo{};
@@ -1056,7 +1046,7 @@ void Renderer::updateUniformBuffer(glm::mat4 viewInverse, glm::mat4 projInverse,
     uniformData.projInverse = projInverse;
     uniformData.cameraPos = glm::vec4(cameraPos, 1.0f);
 
-    uploadBufferHostVisible(bufferUBO, &uniformData, sizeof(UniformData), static_cast<VkDeviceSize>(swapchainIndex) * bufferUBO.dynamicStride);
+    bufferUBO.upload(&uniformData, sizeof(UniformData), static_cast<VkDeviceSize>(swapchainIndex) * bufferUBO.dynamicStride, device);
 }
 
 void Renderer::recreateSwapChain() {
@@ -1104,7 +1094,7 @@ void Renderer::cleanUp() {
     vkDestroyDescriptorSetLayout(device, descriptorSetLayoutRender, VK_ALLOCATOR);
 
     for (PerFrameRenderResources& resources : perFrameRenderResources) {
-        destroyBuffer(resources.spheresBuffer);
+        resources.spheresBuffer.destroy(device);
         vkDestroyAccelerationStructureNV(device, resources.tlas.accelerationStructure, nullptr);
         vkFreeMemory(device, resources.tlas.memory, VK_ALLOCATOR);
     }
@@ -1115,10 +1105,10 @@ void Renderer::cleanUp() {
         if (as.accelerationStructure) vkDestroyAccelerationStructureNV(device, as.accelerationStructure, nullptr);
     }
     sphereInstances.clear();
-    destroyBuffer(sphereAABBsBuffer);
+    sphereAABBsBuffer.destroy(device);
 
-    destroyBuffer(bufferUBO);
-    destroyBuffer(shaderBindingTable);
+    bufferUBO.destroy(device);
+    shaderBindingTable.destroy(device);
     vkDestroyDescriptorPool(device, descriptorPoolModels, VK_ALLOCATOR);
 
     cleanupSwapChain();
@@ -1413,62 +1403,6 @@ void Renderer::recordImageLayoutTransition(VkCommandBuffer commandBuffer, VkImag
         0, nullptr,
         0, nullptr,
         1, &imageMemoryBarrier);
-}
-
-void Renderer::createBuffer(Vk::Buffer& buffer, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkDeviceSize size) {
-    VkBufferCreateInfo bufferInfo = {};
-    bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-    bufferInfo.size = size;
-    bufferInfo.usage = usage;
-    bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-
-    VK_CHECK_RESULT(vkCreateBuffer(device, &bufferInfo, VK_ALLOCATOR, &buffer.buffer), "failed to create buffer!");
-
-    VkMemoryRequirements memRequirements;
-    vkGetBufferMemoryRequirements(device, buffer.buffer, &memRequirements);
-
-    VkMemoryAllocateInfo allocInfo = {};
-    allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-    allocInfo.allocationSize = memRequirements.size;
-    allocInfo.memoryTypeIndex = Vk::findMemoryType(physicalDevice, memRequirements.memoryTypeBits, properties);
-
-    VK_CHECK_RESULT(vkAllocateMemory(device, &allocInfo, VK_ALLOCATOR, &buffer.memory), "failed to allocate buffer memory!");
-
-    vkBindBufferMemory(device, buffer.buffer, buffer.memory, 0);
-    buffer.size = size;
-}
-
-void Renderer::uploadBufferDeviceLocal(Vk::Buffer& buffer, void* data, VkDeviceSize size, VkDeviceSize bufferOffset) {
-    Vk::Buffer stagingBuffer;
-    createBuffer(stagingBuffer, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT, size);
-    uploadBufferHostVisible(stagingBuffer, data, size, 0);
-
-    VkBufferCopy copyRegion{};
-    copyRegion.size = size;
-    copyRegion.srcOffset = 0;
-    copyRegion.dstOffset = bufferOffset;
-
-    VkCommandBuffer commandBuffer = Vk::beginSingleTimeCommands(device, commandPool);
-    vkCmdCopyBuffer(commandBuffer, stagingBuffer.buffer, buffer.buffer, 1, &copyRegion);
-    Vk::endSingleTimeCommands(device, commandBuffer, queues.graphics, commandPool);
-
-    destroyBuffer(stagingBuffer);
-}
-
-void Renderer::uploadBufferHostVisible(Vk::Buffer& buffer, void* data, VkDeviceSize size, VkDeviceSize bufferOffset) {
-    if (size + bufferOffset > buffer.size) {
-        AID_ERROR("uploadBufferHostVisible: trying to upload outside of buffer memory");
-    }
-
-    void* dataDst;
-    VK_CHECK_RESULT(vkMapMemory(device, buffer.memory, bufferOffset, size, 0, &dataDst), "failed to map buffer memory");
-    memcpy(dataDst, data, (size_t)size);
-    vkUnmapMemory(device, buffer.memory);
-}
-
-void Renderer::destroyBuffer(Vk::Buffer& buffer) {
-    if (buffer.buffer != VK_NULL_HANDLE) vkDestroyBuffer(device, buffer.buffer, VK_ALLOCATOR);
-    if (buffer.memory != VK_NULL_HANDLE) vkFreeMemory(device, buffer.memory, VK_ALLOCATOR);
 }
 
 VkDeviceSize Renderer::getUBOOffsetAligned(VkDeviceSize stride) {

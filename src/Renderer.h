@@ -19,11 +19,6 @@
 class Aidanic;
 class ImGuiVk;
 
-enum struct BackgroundMode {
-    XYZ,
-    BLACK
-};
-
 class Renderer {
 public:
     void init(Aidanic* app, std::vector<const char*>& requiredExtensions, glm::mat4 viewInverse, glm::mat4 projInverse, glm::vec3 cameraPos);
@@ -31,13 +26,6 @@ public:
     void cleanUp();
 
     int addSphere(Model::Sphere sphere); // returns 0 for success
-    void setBackgroundMode(BackgroundMode bgm);
-
-    // TODO move to vkHelper and make buffer class
-    void createBuffer(Vk::Buffer& buffer, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkDeviceSize size);
-    void uploadBufferDeviceLocal(Vk::Buffer& buffer, void* data, VkDeviceSize size, VkDeviceSize bufferOffset = 0);
-    void uploadBufferHostVisible(Vk::Buffer& buffer, void* data, VkDeviceSize size, VkDeviceSize bufferOffset = 0);
-    void destroyBuffer(Vk::Buffer& buffer);
 
     VkDevice getDevice() { return device; }
     VkPhysicalDevice getPhysicalDevice() { return physicalDevice; }
@@ -75,11 +63,10 @@ private:
 
     VkPhysicalDeviceRayTracingPropertiesNV rayTracingProperties{};
     Vk::StorageImage renderImage;
-    Vk::Buffer shaderBindingTable;
+    Vk::BufferHostVisible shaderBindingTable;
 
     VkPipeline pipeline;
     VkPipelineLayout pipelineLayout;
-    BackgroundMode backgroundMode = BackgroundMode::XYZ;
 
     VkCommandPool commandPool;
     std::vector<VkCommandBuffer> commandBuffersImageCopy;
@@ -88,11 +75,11 @@ private:
     VkDescriptorPool descriptorPoolRender;
     VkDescriptorSetLayout descriptorSetLayoutRender, descriptorSetLayoutModels;
 
-    Vk::Buffer bufferUBO;
+    Vk::BufferHostVisible bufferUBO;
 
     uint32_t sphereCount = 0;
     std::array<Model::Sphere, SPHERE_COUNT_PER_TLAS> spheres;
-    Vk::Buffer sphereAABBsBuffer;
+    Vk::BufferDeviceLocal sphereAABBsBuffer;
     std::array<Vk::AccelerationStructure, SPHERE_COUNT_PER_TLAS> sphereBLASs; // one sphere per blas
     std::vector<Vk::BLASInstance> sphereInstances;
 
@@ -100,7 +87,7 @@ private:
     struct PerFrameRenderResources {
         Vk::AccelerationStructure tlas;
         VkDescriptorSet descriptorSetModels;
-        Vk::Buffer spheresBuffer;
+        Vk::BufferDeviceLocal spheresBuffer;
 
         bool updateSpheres = false;
         std::vector<uint32_t> updateSphereIndices;

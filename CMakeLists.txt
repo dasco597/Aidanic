@@ -17,6 +17,7 @@ include_directories(${PROJECT_SOURCE_DIR}/src
     ${PROJECT_SOURCE_DIR}/vendor/glm/glm
     ${PROJECT_SOURCE_DIR}/vendor/spdlog/include
     ${PROJECT_SOURCE_DIR}/vendor/imgui
+    ${PROJECT_SOURCE_DIR}/vendor/stb
     ${Vulkan_INCLUDE_DIRS})
 
 add_subdirectory(src)

@@ -1,11 +1,10 @@
 todo:
 
-switch to khr ray tracing
 miss shader sky background
-switch miss shaders with gui to toggle background
-shadows
 glsl include file(s)
 ssbo with lights
-add spheres with gui
+make a 'greek' temple
+ignore self shadows
+switch to khr ray tracing
 
 rtx sdf example https://github.com/georgeouzou/vk_exp/blob/master/src/main.cpp

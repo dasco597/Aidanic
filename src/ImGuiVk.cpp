@@ -103,9 +103,9 @@ void ImGuiVk::createFontTexture() {
 
     // upload pixel data
     {
-        Vk::Buffer uploadBuffer;
-        renderer->createBuffer(uploadBuffer, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT, uploadSize);
-        renderer->uploadBufferHostVisible(uploadBuffer, static_cast<void*>(pixels), uploadSize, 0);
+        Vk::BufferHostVisible uploadBuffer;
+        uploadBuffer.create(VK_BUFFER_USAGE_TRANSFER_SRC_BIT, uploadSize, renderer->getDevice(), renderer->getPhysicalDevice());
+        uploadBuffer.upload(static_cast<void*>(pixels), uploadSize, 0, renderer->getDevice());
 
         VkImageMemoryBarrier copyBarrier[1] = {};
         copyBarrier[0].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
@@ -147,7 +147,7 @@ void ImGuiVk::createFontTexture() {
 
         Vk::endSingleTimeCommands(renderer->getDevice(), commandBuffer, renderer->getGraphicsQueue(), renderer->getCommandPool());
 
-        renderer->destroyBuffer(uploadBuffer);
+        uploadBuffer.destroy(renderer->getDevice());
     }
 
     // store identifier
@@ -450,10 +450,14 @@ void ImGuiVk::recordRenderCommands(uint32_t swapchainIndex) {
         return;
     }
 
-    if (frameResources.vertexBuffer.buffer == VK_NULL_HANDLE || frameResources.vertexBuffer.size < vertex_size)
-        recreateBuffer(frameResources.vertexBuffer, vertex_size, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
-    if (frameResources.indexBuffer.buffer == VK_NULL_HANDLE || frameResources.indexBuffer.size < index_size)
-        recreateBuffer(frameResources.indexBuffer, index_size, VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
+    if (frameResources.vertexBuffer.buffer == VK_NULL_HANDLE || frameResources.vertexBuffer.size < vertex_size) {
+        frameResources.vertexBuffer.destroy(renderer->getDevice());
+        frameResources.vertexBuffer.create(VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, vertex_size, renderer->getDevice(), renderer->getPhysicalDevice());
+    }
+    if (frameResources.indexBuffer.buffer == VK_NULL_HANDLE || frameResources.indexBuffer.size < index_size) {
+        frameResources.indexBuffer.destroy(renderer->getDevice());
+        frameResources.indexBuffer.create(VK_BUFFER_USAGE_INDEX_BUFFER_BIT, index_size, renderer->getDevice(), renderer->getPhysicalDevice());
+    }
 
     // Upload vertex/index data
     {
@@ -586,32 +590,6 @@ void ImGuiVk::setupRenderState(VkCommandBuffer commandBuffer, PerFrame& perFrame
     vkCmdPushConstants(commandBuffer, pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, sizeof(float) * 2, sizeof(float) * 2, translate);
 }
 
-void ImGuiVk::recreateBuffer(Vk::Buffer& buffer, VkDeviceSize newSize, VkBufferUsageFlags usage) {
-    if (buffer.buffer != VK_NULL_HANDLE)
-        vkDestroyBuffer(renderer->getDevice(), buffer.buffer, VK_ALLOCATOR);
-    if (buffer.memory != VK_NULL_HANDLE)
-        vkFreeMemory(renderer->getDevice(), buffer.memory, VK_ALLOCATOR);
-
-    VkBufferCreateInfo buffer_info = {};
-    buffer_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-    buffer_info.size = newSize;
-    buffer_info.usage = usage;
-    buffer_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-    VK_CHECK_RESULT(vkCreateBuffer(renderer->getDevice(), &buffer_info, VK_ALLOCATOR, &buffer.buffer), "failed to recreate imgui buffer");
-
-    VkMemoryRequirements req;
-    vkGetBufferMemoryRequirements(renderer->getDevice(), buffer.buffer, &req);
-    static VkDeviceSize g_BufferMemoryAlignment = 256;
-    g_BufferMemoryAlignment = (g_BufferMemoryAlignment > req.alignment) ? g_BufferMemoryAlignment : req.alignment;
-    VkMemoryAllocateInfo alloc_info = {};
-    alloc_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-    alloc_info.allocationSize = req.size;
-    alloc_info.memoryTypeIndex = Vk::findMemoryType(renderer->getPhysicalDevice(), req.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT);
-    VK_CHECK_RESULT(vkAllocateMemory(renderer->getDevice(), &alloc_info, VK_ALLOCATOR, &buffer.memory), "failed to allocte buffer memory (recreateBuffer)");
-
-    VK_CHECK_RESULT(vkBindBufferMemory(renderer->getDevice(), buffer.buffer, buffer.memory, 0), "failed to bind buffer memory");
-}
-
 void ImGuiVk::cleanup() {
     vkDeviceWaitIdle(renderer->getDevice());
 
@@ -625,8 +603,8 @@ void ImGuiVk::cleanup() {
     vkDestroySampler(renderer->getDevice(), fontSampler, VK_ALLOCATOR);
 
     for (int f = 0; f < perFrameResources.size(); f++) {
-        renderer->destroyBuffer(perFrameResources[f].vertexBuffer);
-        renderer->destroyBuffer(perFrameResources[f].indexBuffer);
+        perFrameResources[f].vertexBuffer.destroy(renderer->getDevice());
+        perFrameResources[f].indexBuffer.destroy(renderer->getDevice());
     }
 
     vkDestroyDescriptorSetLayout(renderer->getDevice(), descriptorSetLayout, VK_ALLOCATOR);

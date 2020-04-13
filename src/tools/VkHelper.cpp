@@ -1,4 +1,7 @@
 #include "VkHelper.h"
+
+#define STB_IMAGE_IMPLEMENTATION
+#include <stb_image.h>
 #include <vulkan/vulkan_core.h>
 
 #include <iostream>
@@ -137,6 +140,70 @@ uint32_t Vk::findMemoryType(VkPhysicalDevice physicalDevice, uint32_t typeFilter
     AID_ERROR("failed to find suitable memory type!");
 }
 
+void _BufferCommon::createCommon(VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkDeviceSize size, VkDevice device, VkPhysicalDevice physicalDevice) {
+    VkBufferCreateInfo bufferInfo = {};
+    bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+    bufferInfo.size = size;
+    bufferInfo.usage = usage;
+    bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+    VK_CHECK_RESULT(vkCreateBuffer(device, &bufferInfo, VK_ALLOCATOR, &buffer), "failed to create buffer!");
+
+    VkMemoryRequirements memRequirements;
+    vkGetBufferMemoryRequirements(device, buffer, &memRequirements);
+
+    VkMemoryAllocateInfo allocInfo = {};
+    allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+    allocInfo.allocationSize = memRequirements.size;
+    allocInfo.memoryTypeIndex = findMemoryType(physicalDevice, memRequirements.memoryTypeBits, properties);
+
+    VK_CHECK_RESULT(vkAllocateMemory(device, &allocInfo, VK_ALLOCATOR, &memory), "failed to allocate buffer memory!");
+
+    vkBindBufferMemory(device, buffer, memory, 0);
+    this->size = size;
+}
+
+void _BufferCommon::destroy(VkDevice device) {
+    if (buffer != VK_NULL_HANDLE) vkDestroyBuffer(device, buffer, VK_ALLOCATOR);
+    if (memory != VK_NULL_HANDLE) vkFreeMemory(device, memory, VK_ALLOCATOR);
+}
+
+void BufferDeviceLocal::create(VkBufferUsageFlags usage, VkDeviceSize size, VkDevice device, VkPhysicalDevice physicalDevice) {
+    createCommon(usage, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, size, device, physicalDevice);
+}
+
+void BufferDeviceLocal::upload(void* data, VkDeviceSize size, VkDeviceSize bufferOffset, VkDevice device, VkPhysicalDevice physicalDevice, VkQueue queue, VkCommandPool commandPool) {
+    BufferHostVisible stagingBuffer;
+    stagingBuffer.create(VK_BUFFER_USAGE_TRANSFER_SRC_BIT, size, device, physicalDevice);
+    stagingBuffer.upload(data, size, 0, device);
+
+    VkBufferCopy copyRegion{};
+    copyRegion.size = size;
+    copyRegion.srcOffset = 0;
+    copyRegion.dstOffset = bufferOffset;
+
+    VkCommandBuffer commandBuffer = Vk::beginSingleTimeCommands(device, commandPool);
+    vkCmdCopyBuffer(commandBuffer, stagingBuffer.buffer, buffer, 1, &copyRegion);
+    Vk::endSingleTimeCommands(device, commandBuffer, queue, commandPool);
+
+    stagingBuffer.destroy(device);
+}
+
+void BufferHostVisible::create(VkBufferUsageFlags usage, VkDeviceSize size, VkDevice device, VkPhysicalDevice physicalDevice) {
+    createCommon(usage, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT, size, device, physicalDevice);
+}
+
+void BufferHostVisible::upload(void* data, VkDeviceSize size, VkDeviceSize bufferOffset, VkDevice device) {
+    if (size + bufferOffset > this->size) {
+        AID_ERROR("uploadBufferHostVisible: trying to upload outside of buffer memory");
+    }
+
+    void* dataDst;
+    VK_CHECK_RESULT(vkMapMemory(device, memory, bufferOffset, size, 0, &dataDst), "failed to map buffer memory");
+    memcpy(dataDst, data, (size_t)size);
+    vkUnmapMemory(device, memory);
+}
+
 VkCommandBuffer Vk::beginSingleTimeCommands(VkDevice device, VkCommandPool commandPool) {
     VkCommandBufferAllocateInfo allocInfo = {};
     allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
@@ -173,6 +240,25 @@ void Vk::endSingleTimeCommands(VkDevice device, VkCommandBuffer commandBuffer, V
 void StorageImage::destroy(VkDevice device) {
     vkFreeMemory(device, memory, VK_ALLOCATOR);
     vkDestroyImageView(device, view, VK_ALLOCATOR);
+    vkDestroyImage(device, image, VK_ALLOCATOR);
+}
+
+void Texture::create(std::string path) {
+    //Buffer stagingBuffer;
+    //create
+    //
+    //VkImageCreateInfo imageInfo = {};
+    //imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+    //imageInfo.imageType = VK_IMAGE_TYPE_2D;
+    //imageInfo.extent.width = static_cast<uint32_t>(texWidth);
+    //imageInfo.extent.height = static_cast<uint32_t>(texHeight);
+    //imageInfo.extent.depth = 1;
+    //imageInfo.mipLevels = 1;
+    //imageInfo.arrayLayers = 1;
+}
+
+void Texture::destroy(VkDevice device) {
+    vkFreeMemory(device, memory, VK_ALLOCATOR);
     vkDestroyImage(device, image, VK_ALLOCATOR);
 }
 
