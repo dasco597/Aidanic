@@ -1,3 +1,5 @@
+04/04/2020 started dev. vertical slice 1 year from now.
+
 you play as pho from land of the lustrous with a little rodent friend who's always sick of this shit
 loop stages:
 1) landscape is shit, mechanical animals are dormant
@@ -25,3 +27,11 @@ graphics:
 translucent land of the lustrous teal hair! ray tracing bitch!
 use procedural generation wherever possible to create a unique graphical feel
 static time of day? area consistency. weather changes with gameplay loop sections?
+
+world/story:
+game opens with [char] lost at sea on a little sail boat with your rodent friend (and looking pretty worse for wear). [char] perks up "ooh, land!"
+gets to shore "I should stretch my muscles a bit" instruction pops down on top left corner "run in a circle" once completed instruction 2 pops down "punch the air" and so on...
+mechanical animals release gas or some shit that influences environment growth, therefore animals go crazy -> plants explode and go crazy 
+
+plan:
+vertical slice: make small grove/bowl/arena, make character, make single 4 legged animal, implement gameplay mechanics

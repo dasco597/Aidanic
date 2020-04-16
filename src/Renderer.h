@@ -25,7 +25,8 @@ public:
     void drawFrame(bool framebufferResized, glm::mat4 viewInverse, glm::mat4 projInverse, glm::vec3 cameraPos, ImGuiVk* imGuiRenderer, bool renderImGui = false);
     void cleanUp();
 
-    int addSphere(Model::Sphere sphere); // returns 0 for success
+    int addEllipsoid(Model::Ellipsoid ellipsoid);
+    //int addSphere(Model::Sphere sphere); // returns 0 for success
 
     VkDevice getDevice() { return device; }
     VkPhysicalDevice getPhysicalDevice() { return physicalDevice; }
@@ -78,7 +79,7 @@ private:
     Vk::BufferHostVisible bufferUBO;
 
     uint32_t sphereCount = 0;
-    std::array<Model::Sphere, SPHERE_COUNT_PER_TLAS> spheres;
+    std::array<Model::Ellipsoid, SPHERE_COUNT_PER_TLAS> spheres;
     Vk::BufferDeviceLocal sphereAABBsBuffer;
     std::array<Vk::AccelerationStructure, SPHERE_COUNT_PER_TLAS> sphereBLASs; // one sphere per blas
     std::vector<Vk::BLASInstance> sphereInstances;

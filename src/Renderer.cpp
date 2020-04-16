@@ -17,12 +17,15 @@ const bool enableValidationLayers = true;
 
 // shader files (relative to assets folder, _CONFIG::getAssetsPath())
 #define SHADER_SRC_RAYGEN               "spirv/raygen.rgen.spv"
+
 #define SHADER_SRC_MISS_BACKGROUND      "spirv/background.rmiss.spv"
 #define SHADER_SRC_MISS_SHADOW          "spirv/shadow.rmiss.spv"
+
 #define SHADER_SRC_CLOSEST_HIT_SCENE    "spirv/closesthit.rchit.spv"
 #define SHADER_SRC_CLOSEST_HIT_SHADOW   "spirv/shadow.rchit.spv"
-#define SHADER_SRC_INTERSECTION_SPHERE  "spirv/sphere.rint.spv"
-#define SHADER_SRC_INTERSECTION_SHADOW  "spirv/shadow.rint.spv"
+
+#define SHADER_SRC_INTERSECTION_ELLIPSOID  "spirv/ellipsoid.rint.spv"
+//#define SHADER_SRC_INTERSECTION_SPHERE  "spirv/sphere.rint.spv"
 
 // shader stage indices
 enum {
@@ -31,8 +34,8 @@ enum {
     STAGE_MISS_SHADOW,
     STAGE_CLOSEST_HIT_SCENE,
     STAGE_CLOSEST_HIT_SHADOW,
-    STAGE_INTERSECTION_SPHERE,
-    STAGE_INTERSECTION_SHADOW,
+    STAGE_INTERSECTION_ELLIPSOID,
+    //STAGE_INTERSECTION_SPHERE,
     STAGE_COUNT
 };
 
@@ -382,8 +385,8 @@ void Renderer::initPerFrameRenderResources() {
 
         // init spheres buffer
 
-        perFrameRenderResources[i].spheresBuffer.create(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, sizeof(Model::Sphere) * SPHERE_COUNT_PER_TLAS, device, physicalDevice);
-        perFrameRenderResources[i].spheresBuffer.upload(spheres.data(), sizeof(Model::Sphere) * spheres.size(), 0, device, physicalDevice, queues.graphics, commandPool);
+        perFrameRenderResources[i].spheresBuffer.create(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, sizeof(Model::Ellipsoid) * SPHERE_COUNT_PER_TLAS, device, physicalDevice);
+        perFrameRenderResources[i].spheresBuffer.upload(spheres.data(), sizeof(Model::Ellipsoid) * spheres.size(), 0, device, physicalDevice, queues.graphics, commandPool);
 
         // create descriptor set
 
@@ -474,8 +477,7 @@ void Renderer::createRayTracingPipeline() {
     shaderStages[STAGE_MISS_SHADOW]         = Vk::loadShader(device, std::string(_CONFIG::getAssetsPath()) + std::string(SHADER_SRC_MISS_SHADOW),         VK_SHADER_STAGE_MISS_BIT_NV,         shaderModules[STAGE_MISS_SHADOW]);
     shaderStages[STAGE_CLOSEST_HIT_SCENE]   = Vk::loadShader(device, std::string(_CONFIG::getAssetsPath()) + std::string(SHADER_SRC_CLOSEST_HIT_SCENE),   VK_SHADER_STAGE_CLOSEST_HIT_BIT_NV,  shaderModules[STAGE_CLOSEST_HIT_SCENE]);
     shaderStages[STAGE_CLOSEST_HIT_SHADOW]  = Vk::loadShader(device, std::string(_CONFIG::getAssetsPath()) + std::string(SHADER_SRC_CLOSEST_HIT_SHADOW),  VK_SHADER_STAGE_CLOSEST_HIT_BIT_NV,  shaderModules[STAGE_CLOSEST_HIT_SHADOW]);
-    shaderStages[STAGE_INTERSECTION_SPHERE] = Vk::loadShader(device, std::string(_CONFIG::getAssetsPath()) + std::string(SHADER_SRC_INTERSECTION_SPHERE), VK_SHADER_STAGE_INTERSECTION_BIT_NV, shaderModules[STAGE_INTERSECTION_SPHERE]);
-    shaderStages[STAGE_INTERSECTION_SHADOW] = Vk::loadShader(device, std::string(_CONFIG::getAssetsPath()) + std::string(SHADER_SRC_INTERSECTION_SHADOW), VK_SHADER_STAGE_INTERSECTION_BIT_NV, shaderModules[STAGE_INTERSECTION_SHADOW]);
+    shaderStages[STAGE_INTERSECTION_ELLIPSOID] = Vk::loadShader(device, std::string(_CONFIG::getAssetsPath()) + std::string(SHADER_SRC_INTERSECTION_ELLIPSOID), VK_SHADER_STAGE_INTERSECTION_BIT_NV, shaderModules[STAGE_INTERSECTION_ELLIPSOID]);
 
     // ray tracing shader groups
     std::array<VkRayTracingShaderGroupCreateInfoNV, GROUP_COUNT> shaderGroups{};
@@ -502,12 +504,12 @@ void Renderer::createRayTracingPipeline() {
     // closest hit scene
     shaderGroups[GROUP_CLOSEST_HIT_SCENE].type = VK_RAY_TRACING_SHADER_GROUP_TYPE_PROCEDURAL_HIT_GROUP_NV;
     shaderGroups[GROUP_CLOSEST_HIT_SCENE].closestHitShader = STAGE_CLOSEST_HIT_SCENE;
-    shaderGroups[GROUP_CLOSEST_HIT_SCENE].intersectionShader = STAGE_INTERSECTION_SPHERE;
+    shaderGroups[GROUP_CLOSEST_HIT_SCENE].intersectionShader = STAGE_INTERSECTION_ELLIPSOID;
 
     // closest hit shadow todo: not used
     shaderGroups[GROUP_CLOSEST_HIT_SHADOW].type = VK_RAY_TRACING_SHADER_GROUP_TYPE_PROCEDURAL_HIT_GROUP_NV;
     shaderGroups[GROUP_CLOSEST_HIT_SHADOW].closestHitShader = STAGE_CLOSEST_HIT_SHADOW;
-    shaderGroups[GROUP_CLOSEST_HIT_SHADOW].intersectionShader = STAGE_INTERSECTION_SPHERE;
+    shaderGroups[GROUP_CLOSEST_HIT_SHADOW].intersectionShader = STAGE_INTERSECTION_ELLIPSOID;
 
     VkRayTracingPipelineCreateInfoNV rayPipelineCI{};
     rayPipelineCI.sType = VK_STRUCTURE_TYPE_RAY_TRACING_PIPELINE_CREATE_INFO_NV;
@@ -779,16 +781,16 @@ void Renderer::drawFrame(bool framebufferResized, glm::mat4 viewInverse, glm::ma
     currentFrame = (currentFrame + 1) % _MAX_FRAMES_IN_FLIGHT;
 }
 
-int Renderer::addSphere(Model::Sphere sphere) {
+int Renderer::addEllipsoid(Model::Ellipsoid ellipsoid) {
     // pre-set limit for now
     if (SPHERE_COUNT_PER_TLAS <= sphereCount) return -1;
 
     uint32_t sphereIndex = sphereCount;
-    spheres[sphereIndex] = sphere;
+    spheres[sphereIndex] = ellipsoid;
 
     // add a BLAS
 
-    Vk::AABB sphereAABB(sphere);
+    Vk::AABB sphereAABB(ellipsoid);
 
     // todo need VK_BUFFER_USAGE_STORAGE_BUFFER_BIT?
     sphereAABBsBuffer.upload(&sphereAABB, sizeof(Vk::AABB), sizeof(Vk::AABB) * sphereIndex, device, physicalDevice, queues.graphics, commandPool);
@@ -962,7 +964,7 @@ void Renderer::updateSpheresBuffer(uint32_t swapchainIndex) {
         if (SPHERE_COUNT_PER_TLAS <= sphereIndex) {
             AID_ERROR("trying to update sphere index outside of SPHERE_COUNT_PER_TLAS!");
         }
-        perFrameRenderResources[swapchainIndex].spheresBuffer.upload(&spheres[sphereIndex], sizeof(Model::Sphere), sizeof(Model::Sphere) * sphereIndex, device, physicalDevice, queues.graphics, commandPool);
+        perFrameRenderResources[swapchainIndex].spheresBuffer.upload(&spheres[sphereIndex], sizeof(Model::Ellipsoid), sizeof(Model::Ellipsoid) * sphereIndex, device, physicalDevice, queues.graphics, commandPool);
     }
     perFrameRenderResources[swapchainIndex].updateSphereIndices.clear();
 }

@@ -86,23 +86,25 @@ void Aidanic::updateImGui() {
     ImGui::NewFrame();
 
     // sphere parameters
-    static glm::vec3 spherePos = glm::vec3(0.f);
-    static float sphereRadius = 0.5f;
-    static glm::vec4 sphereColor = glm::vec4(1.0f);
+    static glm::vec3 ellipsoidPos = glm::vec3(0.f);
+    static glm::vec3 ellipsoidRadius = glm::vec3(0.5f);
+    static glm::vec4 ellipsoidColor = glm::vec4(1.0f);
 
     static ImVec4 clear_color = ImVec4(0.45f, 0.55f, 0.60f, 1.00f);
     {
         ImGui::Begin("Models");   // Pass a pointer to our bool variable (the window will have a closing button that will clear the bool when clicked)
         ImGui::Text("Spheres");
 
-        ImGui::SliderFloat("x", &spherePos.x, -2.0f, 2.0f);
-        ImGui::SliderFloat("y", &spherePos.y, -2.0f, 2.0f);
-        ImGui::SliderFloat("z", &spherePos.z, -2.0f, 2.0f);
-        ImGui::SliderFloat("radius", &sphereRadius, 0.0f, 2.0f);
-        ImGui::ColorEdit3("color", &sphereColor.r);
+        ImGui::SliderFloat("pos x", &ellipsoidPos.x, -2.0f, 2.0f);
+        ImGui::SliderFloat("pos y", &ellipsoidPos.y, -2.0f, 2.0f);
+        ImGui::SliderFloat("pos z", &ellipsoidPos.z, -2.0f, 2.0f);
+        ImGui::SliderFloat("radius x", &ellipsoidRadius.x, 0.0f, 2.0f);
+        ImGui::SliderFloat("radius y", &ellipsoidRadius.y, 0.0f, 2.0f);
+        ImGui::SliderFloat("radius z", &ellipsoidRadius.z, 0.0f, 2.0f);
+        ImGui::ColorEdit3("color", &ellipsoidColor.r);
 
         if (ImGui::Button("Add sphere"))
-            renderer.addSphere(Model::Sphere(spherePos, sphereRadius, sphereColor));
+            renderer.addEllipsoid(Model::Ellipsoid(ellipsoidPos, ellipsoidRadius, ellipsoidColor));
         
         ImGui::End();
     }

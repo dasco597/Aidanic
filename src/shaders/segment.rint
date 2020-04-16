@@ -1,0 +1,33 @@
+#version 460
+#extension GL_NV_ray_tracing : require
+
+// also defined in Renderer.h
+#define SEGMENT_COUNT_PER_TLAS 8
+
+#define MAX_MARCHING_STEPS 100
+#define EPSILON 0.0001
+#define MAX_DISTANCE 100.0
+
+struct Segment {
+	vec4 pos_a;
+	vec4 pos_b;
+	vec4 radius;
+	vec4 color;
+};
+layout(set = 1, binding = 1, std430) readonly buffer Segments { Segment segments[SEGMENT_COUNT_PER_TLAS]; };
+
+struct Hit_Payload {
+	vec4 color;
+	vec4 normal;
+};
+hitAttributeNV Hit_Payload hit_payload;
+
+float sdf_segment(vec3 p, vec3 a, vec3 b, float radius) {
+	vec3 ab = b - a;
+	float h = min(1.0, max(0.0, dot(p - a, ab) / dot(ab, ab)));
+	return length(p - a - ab * h) - radius;
+}
+
+void main()
+{
+}

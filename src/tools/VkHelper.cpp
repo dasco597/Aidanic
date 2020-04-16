@@ -56,6 +56,16 @@ Vk::AABB::AABB(Model::Sphere sphere) {
     aabb_maxz = sphere.posRadius.z + sphere.posRadius.w + edge;
 }
 
+Vk::AABB::AABB(Model::Ellipsoid ellipsoid) {
+    glm::vec4 edge = ellipsoid.radius * glm::vec4(AABB_EDGE_FACTOR);
+    aabb_minx = ellipsoid.center.x - ellipsoid.center.x - edge.x;
+    aabb_miny = ellipsoid.center.y - ellipsoid.center.y - edge.y;
+    aabb_minz = ellipsoid.center.z - ellipsoid.center.z - edge.z;
+    aabb_maxx = ellipsoid.center.x + ellipsoid.center.x + edge.x;
+    aabb_maxy = ellipsoid.center.y + ellipsoid.center.y + edge.y;
+    aabb_maxz = ellipsoid.center.z + ellipsoid.center.z + edge.z;
+}
+
 SwapChainSupportDetails Vk::querySwapChainSupport(VkPhysicalDevice device, VkSurfaceKHR surface) {
     Vk::SwapChainSupportDetails details;
 

@@ -102,6 +102,7 @@ namespace Vk {
 
         AABB() {}
         AABB(Model::Sphere sphere);
+        AABB(Model::Ellipsoid ellipsoid);
     };
 
     SwapChainSupportDetails querySwapChainSupport(VkPhysicalDevice device, VkSurfaceKHR surface);
