@@ -1,6 +1,7 @@
 #version 460
 #extension GL_NV_ray_tracing : require
 
+#define EPSILON 0.0001
 #define AMBIENT 0.2
 
 struct Sphere {
@@ -33,7 +34,7 @@ void main()
     vec3 to_light = light_source - ray_o;
 	const uint shadow_flags = gl_RayFlagsOpaqueNV;
 	
-    traceNV(tlas, shadow_flags, 0xFF, 1, 0, 1, ray_o, 0.01, normalize(to_light), 1000.0, 2);
+    traceNV(tlas, shadow_flags, 0xFF, 1, 0, 1, ray_o + hit_payload.normal.xyz * EPSILON, 0.01, normalize(to_light), 1000.0, 2);
     
     float shadow;
     if (shadow_payload.in_shadow) {

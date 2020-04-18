@@ -12,6 +12,8 @@ make bowl level in shadertoy and then port it to engine
 
 AABB for cylinder, make person out of cylinders and elipses, iteration!
 
+change to graphics xyz coordinate system
+
 miss shader sky background
 glsl include file(s)
 ssbo with lights
