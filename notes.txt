@@ -1,7 +1,10 @@
 todo:
 
-make ellipsoid sdf
+change to graphics xyz coordinate system
 understand instance transforms (pos = [0,0,0] in shader)
+modify spheres from imgui
+goal create ash model (out of ellipses)
+remove 'backface' culling to mitigate shadow artifact
 
 follow (and pause and experiment with) https://www.youtube.com/watch?v=Cfe5UQ-1L9Q
 sky and yellow bowl
@@ -12,14 +15,11 @@ make bowl level in shadertoy and then port it to engine
 
 AABB for cylinder, make person out of cylinders and elipses, iteration!
 
-change to graphics xyz coordinate system
-
-miss shader sky background
 glsl include file(s)
 ssbo with lights
 make a 'greek' temple
 ignore self shadows
-switch to khr ray tracing
+switch to khr ray tracing (VkAccelerationStructureInstanceKHR instead of Vk::BLASInstance)
 
 rtx sdf example https://github.com/georgeouzou/vk_exp/blob/master/src/main.cpp
 Inigo Quilez

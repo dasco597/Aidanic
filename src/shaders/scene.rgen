@@ -17,7 +17,7 @@ layout(location = 0) rayPayloadNV Ray_Payload ray_payload;
 
 void main()
 {
-	vec2 uv = (vec2(gl_LaunchIDNV.xy) + vec2(0.5) - vec2(gl_LaunchSizeNV.xy) / 2) / vec2(gl_LaunchSizeNV.x);
+	vec2 uv = (vec2(gl_LaunchIDNV.xy) + vec2(0.5) - vec2(gl_LaunchSizeNV.xy) / 2) / vec2(gl_LaunchSizeNV.x); // between -0.5 and 0.5
 	vec4 target = cam.projInverse * vec4(uv.x, -uv.y, 1, 1);
 	vec4 direction = cam.viewInverse * vec4(normalize(target.xyz / target.w), 0);
 

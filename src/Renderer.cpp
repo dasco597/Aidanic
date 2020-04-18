@@ -3,6 +3,8 @@
 #include "ImGuiVk.h"
 #include "tools/config.h"
 
+#include "ext/matrix_transform.hpp"
+
 #include <array>
 #include <stdexcept>
 #include <set>
@@ -16,12 +18,12 @@ const bool enableValidationLayers = true;
 // TODO replace nullptr with VK_ALLOCATOR where relevant
 
 // shader files (relative to assets folder, _CONFIG::getAssetsPath())
-#define SHADER_SRC_RAYGEN               "spirv/raygen.rgen.spv"
+#define SHADER_SRC_RAYGEN               "spirv/scene.rgen.spv"
 
 #define SHADER_SRC_MISS_BACKGROUND      "spirv/background.rmiss.spv"
 #define SHADER_SRC_MISS_SHADOW          "spirv/shadow.rmiss.spv"
 
-#define SHADER_SRC_CLOSEST_HIT_SCENE    "spirv/closesthit.rchit.spv"
+#define SHADER_SRC_CLOSEST_HIT_SCENE    "spirv/scene.rchit.spv"
 #define SHADER_SRC_CLOSEST_HIT_SHADOW   "spirv/shadow.rchit.spv"
 
 #define SHADER_SRC_INTERSECTION_ELLIPSOID  "spirv/ellipsoid.rint.spv"
@@ -808,18 +810,9 @@ int Renderer::addEllipsoid(Model::Ellipsoid ellipsoid) {
     geometrySphere.geometryType = VK_GEOMETRY_TYPE_AABBS_NV;
     geometrySphere.geometry.aabbs = geometryAabbSphere;
 
-    // todo how much of this do we need?
     geometrySphere.geometry.triangles.sType = VK_STRUCTURE_TYPE_GEOMETRY_TRIANGLES_NV;
-    geometrySphere.geometry.triangles.vertexData = VK_NULL_HANDLE;
     geometrySphere.geometry.triangles.vertexCount = 0;
-    geometrySphere.geometry.triangles.vertexOffset = 0;
-    geometrySphere.geometry.triangles.vertexFormat = VK_FORMAT_R32G32B32_SFLOAT;
-    geometrySphere.geometry.triangles.indexData = VK_NULL_HANDLE;
     geometrySphere.geometry.triangles.indexCount = 0;
-    geometrySphere.geometry.triangles.indexOffset = 0;
-    geometrySphere.geometry.triangles.indexType = VK_INDEX_TYPE_NONE_NV;
-    geometrySphere.geometry.triangles.transformData = VK_NULL_HANDLE;
-    geometrySphere.geometry.triangles.transformOffset = 0;
 
     createBottomLevelAccelerationStructure(sphereBLASs[sphereIndex], &geometrySphere, 1);
 
@@ -869,6 +862,7 @@ int Renderer::addEllipsoid(Model::Ellipsoid ellipsoid) {
         0.0f, 1.0f, 0.0f, 0.0f,
         0.0f, 0.0f, 1.0f, 0.0f
     };
+    //glm::mat4 transform = glm::rotate(glm::mat4(1.0), _AID_PI * 0.25f, glm::vec3(1.0, 0.0, 0.0));
 
     Vk::BLASInstance geometryInstance{};
     geometryInstance.transform = transform;

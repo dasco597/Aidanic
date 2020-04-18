@@ -28,7 +28,7 @@ layout(location = 2) rayPayloadNV ShadowPayload shadow_payload;
 
 void main()
 {
-    const vec3 light_source = vec3(-1.0, 0.5, 5.0);
+    const vec3 light_source = vec3(-1.0, 5.0, 0.5);
 
     vec3 ray_o = gl_WorldRayOriginNV + gl_WorldRayDirectionNV * gl_HitTNV;
     vec3 to_light = light_source - ray_o;

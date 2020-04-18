@@ -126,22 +126,22 @@ void Aidanic::processInputs() {
 
     // LOOK
 
-    float viewAngleHoriz = (double)mouseMovement[0] * -radiansPerMousePosYaw;
+    float viewAngleHoriz = (double)mouseMovement[0] * -radiansPerMousePosPitch;
     viewerForward = glm::rotate(viewerForward, viewAngleHoriz, viewerUp);
-    viewerLeft = glm::cross(viewerUp, viewerForward);
+    viewerRight = glm::cross(viewerForward, viewerUp);
 
-    float viewAngleVert = (double)mouseMovement[1] * radiansPerMousePosPitch;
-    viewerForward = glm::rotate(viewerForward, viewAngleVert, viewerLeft);
-    viewerUp = glm::cross(viewerForward, viewerLeft);
+    float viewAngleVert = (double)mouseMovement[1] * -radiansPerMousePosYaw;
+    viewerForward = glm::rotate(viewerForward, viewAngleVert, viewerRight);
+    viewerUp = glm::cross(viewerRight, viewerForward);
 
     if (inputs.conatinsInput(INPUTS::ROTATEL) != inputs.conatinsInput(INPUTS::ROTATER)) {
         float viewAngleFront = radiansPerSecondRoll * timeDif * (inputs.conatinsInput(INPUTS::ROTATER) ? 1 : -1);
         viewerUp = glm::rotate(viewerUp, viewAngleFront, viewerForward);
-        viewerLeft = glm::cross(viewerUp, viewerForward);
+        viewerRight = glm::cross(viewerForward, viewerUp);
     }
 
     viewerForward = glm::normalize(viewerForward);
-    viewerLeft = glm::normalize(viewerLeft);
+    viewerRight = glm::normalize(viewerRight);
     viewerUp = glm::normalize(viewerUp);
     
     updateMatrices();
@@ -152,7 +152,7 @@ void Aidanic::processInputs() {
         viewerPosition += viewerForward * glm::vec3(inputs.conatinsInput(INPUTS::FORWARD) ? forwardSpeed * timeDif : -backSpeed * timeDif);
 
     if (inputs.conatinsInput(INPUTS::LEFT) != inputs.conatinsInput(INPUTS::RIGHT))
-        viewerPosition += viewerLeft * glm::vec3(inputs.conatinsInput(INPUTS::RIGHT) ? -strafeSpeed * timeDif : strafeSpeed * timeDif);
+        viewerPosition += viewerRight * glm::vec3(inputs.conatinsInput(INPUTS::RIGHT) ? strafeSpeed * timeDif : -strafeSpeed * timeDif);
 
     if (inputs.conatinsInput(INPUTS::UP) != inputs.conatinsInput(INPUTS::DOWN))
         viewerPosition += viewerUp * glm::vec3(inputs.conatinsInput(INPUTS::UP) ? strafeSpeed * timeDif : -strafeSpeed * timeDif);
