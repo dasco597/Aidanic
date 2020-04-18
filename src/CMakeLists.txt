@@ -1,4 +1,5 @@
-file(GLOB_RECURSE HEADERS   ${CMAKE_CURRENT_SOURCE_DIR}/*.h)
+file(GLOB_RECURSE HEADERS   ${CMAKE_CURRENT_SOURCE_DIR}/*.h
+                            ${CMAKE_CURRENT_SOURCE_DIR}/shaders/*.glsl)
 file(GLOB_RECURSE SOURCE    ${CMAKE_CURRENT_SOURCE_DIR}/*.cpp)
 file(GLOB_RECURSE SHADERS   ${CMAKE_CURRENT_SOURCE_DIR}/shaders/*.rgen
                             ${CMAKE_CURRENT_SOURCE_DIR}/shaders/*.rint

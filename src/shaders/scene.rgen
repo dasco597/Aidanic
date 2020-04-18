@@ -2,6 +2,9 @@
 #extension GL_NV_ray_tracing : require
 #extension GL_EXT_nonuniform_qualifier : require
 
+#extension GL_GOOGLE_include_directive : require
+#include "common.glsl"
+
 layout(set = 0, binding = 0, rgba8) uniform image2D renderImage;
 layout(set = 0, binding = 1) uniform CameraProperties {
 	mat4 viewInverse;
@@ -10,10 +13,7 @@ layout(set = 0, binding = 1) uniform CameraProperties {
 } cam;
 layout(set = 1, binding = 0) uniform accelerationStructureNV tlas;
 
-struct Ray_Payload {
-    vec4 color;
-};
-layout(location = 0) rayPayloadNV Ray_Payload ray_payload;
+layout(location = 0) rayPayloadNV RayPayload ray_payload;
 
 void main()
 {

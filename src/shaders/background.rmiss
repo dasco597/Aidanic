@@ -1,9 +1,9 @@
 #version 460
 #extension GL_NV_ray_tracing : require
 
-struct RayPayload {
-    vec4 color;
-};
+#extension GL_GOOGLE_include_directive : require
+#include "common.glsl"
+
 layout(location = 0) rayPayloadInNV RayPayload ray_payload;
 
 void main()

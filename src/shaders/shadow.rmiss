@@ -1,9 +1,9 @@
 #version 460
 #extension GL_NV_ray_tracing : require
 
-struct ShadowPayload {
-    bool in_shadow;
-};
+#extension GL_GOOGLE_include_directive : require
+#include "common.glsl"
+
 layout(location = 2) rayPayloadInNV ShadowPayload shadow_payload;
 
 void main()

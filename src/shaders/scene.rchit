@@ -1,30 +1,17 @@
 #version 460
 #extension GL_NV_ray_tracing : require
 
+#extension GL_GOOGLE_include_directive : require
+#include "common.glsl"
+
 #define EPSILON 0.0001
 #define AMBIENT 0.2
 
-struct Sphere {
-    vec4 posRadius;
-};
 layout(set = 1, binding = 0) uniform accelerationStructureNV tlas;
-layout(set = 1, binding = 1, std430) readonly buffer Spheres { Sphere spheres[]; };
 
-struct HitPayload {
-	vec4 color;
-	vec4 normal;
-};
 hitAttributeNV HitPayload hit_payload;
-
-struct RayPayload {
-    vec4 color;
-};
 layout(location = 0) rayPayloadInNV RayPayload ray_payload;
-
-struct ShadowPayload {
-    bool in_shadow;
-};
-layout(location = 2) rayPayloadNV ShadowPayload shadow_payload;
+layout(location = 2) rayPayloadNV ShadowPayload shadow_payload; // todo location 1
 
 void main()
 {
