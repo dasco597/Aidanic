@@ -24,7 +24,7 @@ const bool enableValidationLayers = true;
 #define SHADER_SRC_MISS_SHADOW          "spirv/shadow.rmiss.spv"
 
 #define SHADER_SRC_CLOSEST_HIT_SCENE    "spirv/scene.rchit.spv"
-#define SHADER_SRC_CLOSEST_HIT_SHADOW   "spirv/shadow.rchit.spv"
+#define SHADER_SRC_ANY_HIT_SHADOW       "spirv/shadow.rahit.spv"
 
 #define SHADER_SRC_INTERSECTION_ELLIPSOID  "spirv/ellipsoid.rint.spv"
 //#define SHADER_SRC_INTERSECTION_SPHERE  "spirv/sphere.rint.spv"
@@ -35,9 +35,8 @@ enum {
     STAGE_MISS_BACKGROUND,
     STAGE_MISS_SHADOW,
     STAGE_CLOSEST_HIT_SCENE,
-    STAGE_CLOSEST_HIT_SHADOW,
+    STAGE_ANY_HIT_SHADOW,
     STAGE_INTERSECTION_ELLIPSOID,
-    //STAGE_INTERSECTION_SPHERE,
     STAGE_COUNT
 };
 
@@ -46,8 +45,8 @@ enum {
     GROUP_RAYGEN,
     GROUP_MISS_BACKGROUND,
     GROUP_MISS_SHADOW,
-    GROUP_CLOSEST_HIT_SCENE,
-    GROUP_CLOSEST_HIT_SHADOW,
+    GROUP_HIT_SCENE,
+    GROUP_HIT_SHADOW,
     GROUP_COUNT
 };
 
@@ -474,12 +473,12 @@ void Renderer::createRayTracingPipeline() {
 
     std::array<VkShaderModule, STAGE_COUNT> shaderModules;
     std::array<VkPipelineShaderStageCreateInfo, STAGE_COUNT> shaderStages;
-    shaderStages[STAGE_RAYGEN]              = Vk::loadShader(device, std::string(_CONFIG::getAssetsPath()) + std::string(SHADER_SRC_RAYGEN),              VK_SHADER_STAGE_RAYGEN_BIT_NV,       shaderModules[STAGE_RAYGEN]);
-    shaderStages[STAGE_MISS_BACKGROUND]     = Vk::loadShader(device, std::string(_CONFIG::getAssetsPath()) + std::string(SHADER_SRC_MISS_BACKGROUND),     VK_SHADER_STAGE_MISS_BIT_NV,         shaderModules[STAGE_MISS_BACKGROUND]);
-    shaderStages[STAGE_MISS_SHADOW]         = Vk::loadShader(device, std::string(_CONFIG::getAssetsPath()) + std::string(SHADER_SRC_MISS_SHADOW),         VK_SHADER_STAGE_MISS_BIT_NV,         shaderModules[STAGE_MISS_SHADOW]);
-    shaderStages[STAGE_CLOSEST_HIT_SCENE]   = Vk::loadShader(device, std::string(_CONFIG::getAssetsPath()) + std::string(SHADER_SRC_CLOSEST_HIT_SCENE),   VK_SHADER_STAGE_CLOSEST_HIT_BIT_NV,  shaderModules[STAGE_CLOSEST_HIT_SCENE]);
-    shaderStages[STAGE_CLOSEST_HIT_SHADOW]  = Vk::loadShader(device, std::string(_CONFIG::getAssetsPath()) + std::string(SHADER_SRC_CLOSEST_HIT_SHADOW),  VK_SHADER_STAGE_CLOSEST_HIT_BIT_NV,  shaderModules[STAGE_CLOSEST_HIT_SHADOW]);
-    shaderStages[STAGE_INTERSECTION_ELLIPSOID] = Vk::loadShader(device, std::string(_CONFIG::getAssetsPath()) + std::string(SHADER_SRC_INTERSECTION_ELLIPSOID), VK_SHADER_STAGE_INTERSECTION_BIT_NV, shaderModules[STAGE_INTERSECTION_ELLIPSOID]);
+    shaderStages[STAGE_RAYGEN]                  = Vk::loadShader(device, std::string(_CONFIG::getAssetsPath()) + std::string(SHADER_SRC_RAYGEN),                 VK_SHADER_STAGE_RAYGEN_BIT_NV,       shaderModules[STAGE_RAYGEN]);
+    shaderStages[STAGE_MISS_BACKGROUND]         = Vk::loadShader(device, std::string(_CONFIG::getAssetsPath()) + std::string(SHADER_SRC_MISS_BACKGROUND),        VK_SHADER_STAGE_MISS_BIT_NV,         shaderModules[STAGE_MISS_BACKGROUND]);
+    shaderStages[STAGE_MISS_SHADOW]             = Vk::loadShader(device, std::string(_CONFIG::getAssetsPath()) + std::string(SHADER_SRC_MISS_SHADOW),            VK_SHADER_STAGE_MISS_BIT_NV,         shaderModules[STAGE_MISS_SHADOW]);
+    shaderStages[STAGE_CLOSEST_HIT_SCENE]       = Vk::loadShader(device, std::string(_CONFIG::getAssetsPath()) + std::string(SHADER_SRC_CLOSEST_HIT_SCENE),      VK_SHADER_STAGE_CLOSEST_HIT_BIT_NV,  shaderModules[STAGE_CLOSEST_HIT_SCENE]);
+    shaderStages[STAGE_ANY_HIT_SHADOW]          = Vk::loadShader(device, std::string(_CONFIG::getAssetsPath()) + std::string(SHADER_SRC_ANY_HIT_SHADOW),         VK_SHADER_STAGE_ANY_HIT_BIT_NV,      shaderModules[STAGE_ANY_HIT_SHADOW]);
+    shaderStages[STAGE_INTERSECTION_ELLIPSOID]  = Vk::loadShader(device, std::string(_CONFIG::getAssetsPath()) + std::string(SHADER_SRC_INTERSECTION_ELLIPSOID), VK_SHADER_STAGE_INTERSECTION_BIT_NV, shaderModules[STAGE_INTERSECTION_ELLIPSOID]);
 
     // ray tracing shader groups
     std::array<VkRayTracingShaderGroupCreateInfoNV, GROUP_COUNT> shaderGroups{};
@@ -495,23 +494,23 @@ void Renderer::createRayTracingPipeline() {
     shaderGroups[GROUP_RAYGEN].type = VK_RAY_TRACING_SHADER_GROUP_TYPE_GENERAL_NV;
     shaderGroups[GROUP_RAYGEN].generalShader = STAGE_RAYGEN;
 
-    // miss scene
+    // scene miss
     shaderGroups[GROUP_MISS_BACKGROUND].type = VK_RAY_TRACING_SHADER_GROUP_TYPE_GENERAL_NV;
     shaderGroups[GROUP_MISS_BACKGROUND].generalShader = STAGE_MISS_BACKGROUND;
 
-    // miss shadow
+    // shadow miss
     shaderGroups[GROUP_MISS_SHADOW].type = VK_RAY_TRACING_SHADER_GROUP_TYPE_GENERAL_NV;
     shaderGroups[GROUP_MISS_SHADOW].generalShader = STAGE_MISS_SHADOW;
 
-    // closest hit scene
-    shaderGroups[GROUP_CLOSEST_HIT_SCENE].type = VK_RAY_TRACING_SHADER_GROUP_TYPE_PROCEDURAL_HIT_GROUP_NV;
-    shaderGroups[GROUP_CLOSEST_HIT_SCENE].closestHitShader = STAGE_CLOSEST_HIT_SCENE;
-    shaderGroups[GROUP_CLOSEST_HIT_SCENE].intersectionShader = STAGE_INTERSECTION_ELLIPSOID;
+    // scene closest hit
+    shaderGroups[GROUP_HIT_SCENE].type = VK_RAY_TRACING_SHADER_GROUP_TYPE_PROCEDURAL_HIT_GROUP_NV;
+    shaderGroups[GROUP_HIT_SCENE].closestHitShader = STAGE_CLOSEST_HIT_SCENE;
+    shaderGroups[GROUP_HIT_SCENE].intersectionShader = STAGE_INTERSECTION_ELLIPSOID;
 
-    // closest hit shadow todo: not used
-    shaderGroups[GROUP_CLOSEST_HIT_SHADOW].type = VK_RAY_TRACING_SHADER_GROUP_TYPE_PROCEDURAL_HIT_GROUP_NV;
-    shaderGroups[GROUP_CLOSEST_HIT_SHADOW].closestHitShader = STAGE_CLOSEST_HIT_SHADOW;
-    shaderGroups[GROUP_CLOSEST_HIT_SHADOW].intersectionShader = STAGE_INTERSECTION_ELLIPSOID;
+    // shadow any hit
+    shaderGroups[GROUP_HIT_SHADOW].type = VK_RAY_TRACING_SHADER_GROUP_TYPE_PROCEDURAL_HIT_GROUP_NV;
+    shaderGroups[GROUP_HIT_SHADOW].anyHitShader = STAGE_ANY_HIT_SHADOW;
+    shaderGroups[GROUP_HIT_SHADOW].intersectionShader = STAGE_INTERSECTION_ELLIPSOID;
 
     VkRayTracingPipelineCreateInfoNV rayPipelineCI{};
     rayPipelineCI.sType = VK_STRUCTURE_TYPE_RAY_TRACING_PIPELINE_CREATE_INFO_NV;
@@ -806,7 +805,7 @@ int Renderer::addEllipsoid(Model::Ellipsoid ellipsoid) {
 
     VkGeometryNV geometrySphere{};
     geometrySphere.sType = VK_STRUCTURE_TYPE_GEOMETRY_NV;
-    geometrySphere.flags = VK_GEOMETRY_OPAQUE_BIT_NV;
+    geometrySphere.flags;// = VK_GEOMETRY_OPAQUE_BIT_NV; TODO need this for scene but not for shadows
     geometrySphere.geometryType = VK_GEOMETRY_TYPE_AABBS_NV;
     geometrySphere.geometry.aabbs = geometryAabbSphere;
 
@@ -1008,7 +1007,7 @@ void Renderer::recordCommandBufferRender(uint32_t swapchainIndex) {
     // shader binding offsets
     VkDeviceSize bindingOffsetRayGenShader = static_cast<VkDeviceSize>(rayTracingProperties.shaderGroupHandleSize) * GROUP_RAYGEN;
     VkDeviceSize bindingOffsetMissShader   = static_cast<VkDeviceSize>(rayTracingProperties.shaderGroupHandleSize) * GROUP_MISS_BACKGROUND;
-    VkDeviceSize bindingOffsetHitShader    = static_cast<VkDeviceSize>(rayTracingProperties.shaderGroupHandleSize) * GROUP_CLOSEST_HIT_SCENE;
+    VkDeviceSize bindingOffsetHitShader    = static_cast<VkDeviceSize>(rayTracingProperties.shaderGroupHandleSize) * GROUP_HIT_SCENE;
     VkDeviceSize bindingStride = static_cast<VkDeviceSize>(rayTracingProperties.shaderGroupHandleSize);
 
     VkCommandBufferBeginInfo beginInfo{};

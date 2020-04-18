@@ -4,7 +4,7 @@
 #extension GL_GOOGLE_include_directive : require
 #include "common.glsl"
 
-layout(location = 2) rayPayloadInNV ShadowPayload shadow_payload;
+layout(location = 1) rayPayloadInNV ShadowPayload shadow_payload;
 
 void main()
 {
