@@ -28,7 +28,6 @@ private:
 
     void cleanup();
 
-    IOInterface ioInterface;
     Renderer renderer;
     ImGuiVk imGuiRenderer;
 
@@ -41,6 +40,8 @@ private:
 
     std::array<int, 2> windowSize = { _WINDOW_SIZE_X, _WINDOW_SIZE_Y };
     Inputs inputs = { INPUTS::NONE };
+
+    std::vector<Model::Ellipsoid> ellipsoids;
 
     float fovDegrees = 90.f;
     float nearPlane = 0.1f;

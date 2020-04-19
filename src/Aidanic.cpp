@@ -36,7 +36,7 @@ void Aidanic::init() {
     AID_INFO("~ Initializing Aidanic...");
 
     std::vector<const char*> requiredExtensions;
-    ioInterface.init(this, requiredExtensions, windowSize[0], windowSize[1]);
+    IOInterface::init(this, requiredExtensions, windowSize[0], windowSize[1]);
     AID_INFO("IO interface initialized");
 
     updateMatrices();
@@ -54,18 +54,21 @@ void Aidanic::initImGui() {
     ImGui::StyleColorsDark();
 
     imGuiRenderer.init(&renderer);
+
+    ImVec4 clear_color = ImVec4(0.45f, 0.55f, 0.60f, 1.00f);
+    memcpy(imGuiRenderer.getpClearValue(), &clear_color, 4 * sizeof(float));
 }
 
 VkResult Aidanic::createVkSurface(VkInstance& instance, const VkAllocationCallbacks* allocator, VkSurfaceKHR* surface) {
-    return ioInterface.createVkSurface(instance, allocator, surface);
+    return IOInterface::createVkSurface(instance, allocator, surface);
 }
 
 void Aidanic::loop() {
     AID_INFO("~ Entering main loop...");
-    while (!quit && !ioInterface.windowCloseCheck()) {
+    while (!quit && !IOInterface::windowCloseCheck()) {
         // input handling
-        ioInterface.pollEvents();
-        inputs = ioInterface.getInputs();
+        IOInterface::pollEvents();
+        inputs = IOInterface::getInputs();
         processInputs();
 
         // prepare ImGui
@@ -82,18 +85,53 @@ void Aidanic::updateImGui() {
         AID_WARN("imGui font atlas not built!");
     }
 
-    ioInterface.updateImGui();
+    IOInterface::updateImGui();
     ImGui::NewFrame();
 
-    // sphere parameters
-    static glm::vec3 ellipsoidPos = glm::vec3(0.f);
-    static glm::vec3 ellipsoidRadius = glm::vec3(0.5f);
-    static glm::vec4 ellipsoidColor = glm::vec4(1.0f);
+    enum struct EditorState {
+        NEW,
+        EDIT
+    };
 
-    static ImVec4 clear_color = ImVec4(0.45f, 0.55f, 0.60f, 1.00f);
+    static EditorState editorState = EditorState::NEW;
+    static int selectedEllipsoid = -1;
+
+    // scene graph
     {
-        ImGui::Begin("Models");   // Pass a pointer to our bool variable (the window will have a closing button that will clear the bool when clicked)
-        ImGui::Text("Spheres");
+        ImGui::Begin("Scene");
+
+        if (ImGui::Button("New ellipsoid")) {
+            editorState = EditorState::NEW;
+            selectedEllipsoid = -1;
+        }
+        for (int e = 0; e < ellipsoids.size(); e++) {
+            std::string message = std::string("Ellipsoid ") + std::to_string(e);
+            if (ImGui::Button(message.c_str())) {
+                editorState = EditorState::EDIT;
+                selectedEllipsoid = e;
+            }
+        }
+
+        ImGui::End();
+    }
+
+    // object editor
+    {
+        ImGui::Begin("Editor");
+        switch (editorState)
+        {
+        case EditorState::NEW:
+            ImGui::Text("New ellipsoid"); break;
+
+        case EditorState::EDIT:
+            std::string message = std::string("Ellipsoid ") + std::to_string(selectedEllipsoid);
+            ImGui::Text(message.c_str()); break;
+        }
+
+        // ellipsoid parameters
+        static glm::vec3 ellipsoidPos = glm::vec3(0.f);
+        static glm::vec3 ellipsoidRadius = glm::vec3(0.5f);
+        static glm::vec4 ellipsoidColor = glm::vec4(1.0f);
 
         ImGui::SliderFloat("pos x", &ellipsoidPos.x, -2.0f, 2.0f);
         ImGui::SliderFloat("pos y", &ellipsoidPos.y, -2.0f, 2.0f);
@@ -103,14 +141,25 @@ void Aidanic::updateImGui() {
         ImGui::SliderFloat("radius z", &ellipsoidRadius.z, 0.0f, 2.0f);
         ImGui::ColorEdit3("color", &ellipsoidColor.r);
 
-        if (ImGui::Button("Add sphere"))
-            renderer.addEllipsoid(Model::Ellipsoid(ellipsoidPos, ellipsoidRadius, ellipsoidColor));
-        
+        switch (editorState)
+        {
+        case EditorState::NEW :
+            if (ImGui::Button("Add ellipsoid")) {
+                ellipsoids.push_back(Model::Ellipsoid(ellipsoidPos, ellipsoidRadius, ellipsoidColor));
+                renderer.addEllipsoid(ellipsoids[ellipsoids.size() - 1]);
+            }
+            break;
+
+        case EditorState::EDIT :
+            ImGui::Button("Update");
+            ImGui::Button("Delete");
+            break;
+        }
+
         ImGui::End();
     }
 
     ImGui::Render();
-    memcpy(imGuiRenderer.getpClearValue(), &clear_color, 4 * sizeof(float));
 }
 
 void Aidanic::processInputs() {
@@ -122,7 +171,7 @@ void Aidanic::processInputs() {
     timePrev = high_resolution_clock::now();
 
     // get mouse inputs from window interface
-    std::array<double, 2> mouseMovement = ioInterface.getMouseChange();
+    std::array<double, 2> mouseMovement = IOInterface::getMouseChange();
 
     // LOOK
 
@@ -173,13 +222,13 @@ void Aidanic::cleanup() {
     renderer.cleanUp();
     AID_INFO("Vulkan renderer RTX cleaned up");
 
-    ioInterface.cleanUp();
+    IOInterface::cleanUp();
     AID_INFO("IO interface cleaned up");
 
     cleanedUp = true;
 }
 
 std::array<int, 2> Aidanic::getWindowSize() {
-    windowSize = ioInterface.getWindowSize();
+    windowSize = IOInterface::getWindowSize();
     return windowSize;
 }

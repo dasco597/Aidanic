@@ -5,11 +5,6 @@
 #include <map>
 #include <vector>
 
-enum struct CONTROL_SCHEME {
-	EDITOR, // free mouse controls (activate with key_1)
-	GAMEPLAY // captured mouse (activate with key_2)
-};
-
 class Aidanic;
 struct ImGuiIO;
 
@@ -36,17 +31,17 @@ union Inputs {
 	bool conatinsInput(INPUTS compValue) { return uint & static_cast<uint32_t>(compValue); }
 };
 
-class IOInterface {
-public:
+namespace IOInterface {
+
+	// public functions
 
     void init(Aidanic* application, std::vector<const char*>& requiredExtensions, uint32_t width, uint32_t height);
-	static void glfwErrorCallback(int error, const char* errorMessage);
+	void glfwErrorCallback(int error, const char* errorMessage);
 	VkResult createVkSurface(VkInstance& instance, const VkAllocationCallbacks* allocator, VkSurfaceKHR* surface);
 
-	static void windowResizeCallback(GLFWwindow* window, int width, int height);
-	std::array<int, 2> IOInterface::getWindowSize();
+	std::array<int, 2> getWindowSize();
 
-	int windowCloseCheck() { return glfwWindowShouldClose(window); };
+	int windowCloseCheck();
 	void minimizeSuspend(); // doesn't return unless window isn't minimized
 	void pollEvents(); // updates glfw state (key presses etc)
 
@@ -56,24 +51,5 @@ public:
 
 	void cleanUp();
 
-private:
-
-	Aidanic* aidanicApp;
-    GLFWwindow* window = nullptr;
-
-	double time = 0.0, timeDelta = 0.0;
-	bool mouseLeftClickDown = false;
-    uint32_t windowSize[2] = { 0, 0 };
-	double mousePosPrev[2] = { 0.0, 0.0 };
-	CONTROL_SCHEME controlScheme = CONTROL_SCHEME::EDITOR;
-
-	enum struct INPUTS_INTERNAL {
-		EDITOR_MODE,
-		GAMEPLAY_MODE
-	};
-    std::map<uint32_t, INPUTS> keyBindings;
-	std::map<INPUTS_INTERNAL, uint32_t> keyBindingsInternal;
-
-	void setKeyBindings(); // initialization function: populates keyBindings map
 };
 

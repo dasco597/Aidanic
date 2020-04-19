@@ -1,7 +1,7 @@
 todo:
 
-change to graphics xyz coordinate system
-understand instance transforms (pos = [0,0,0] in shader)
+remove Aidanic, IOInterface, Renderer classes in favor of static model (so they can access each others functions without fucking pointers and shit)
+
 modify spheres from imgui
 goal create ash model (out of ellipses)
 remove 'backface' culling to mitigate shadow artifact
@@ -15,11 +15,14 @@ make bowl level in shadertoy and then port it to engine
 
 AABB for cylinder, make person out of cylinders and elipses, iteration!
 
-glsl include file(s)
 ssbo with lights
 make a 'greek' temple
-ignore self shadows
 switch to khr ray tracing (VkAccelerationStructureInstanceKHR instead of Vk::BLASInstance)
 
 rtx sdf example https://github.com/georgeouzou/vk_exp/blob/master/src/main.cpp
 Inigo Quilez
+nv ray tracing https://github.com/nvpro-samples/vk_raytracing_tutorial
+
+functionality:
+
+add sphere,
