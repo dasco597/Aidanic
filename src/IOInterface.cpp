@@ -13,7 +13,6 @@ enum struct CONTROL_SCHEME {
 };
 
 struct WindowApp {
-    Aidanic* aidanicApp;
     static void windowResizeCallback(GLFWwindow* window, int width, int height);
 };
 
@@ -41,11 +40,10 @@ void setKeyBindings();
 
 // function implimentations
 
-void init(Aidanic* application, std::vector<const char*>& requiredExtensions, uint32_t width, uint32_t height) {
+void init(std::vector<const char*>& requiredExtensions, uint32_t width, uint32_t height) {
     AID_INFO("Initializing interface...");
     windowSize[0] = width;
     windowSize[1] = height;
-    windowApp.aidanicApp = application;
     if (window) cleanUp();
 
     // GLFW
@@ -94,7 +92,7 @@ VkResult createVkSurface(VkInstance& instance, const VkAllocationCallbacks* allo
 
 void WindowApp::windowResizeCallback(GLFWwindow* window, int width, int height) {
     WindowApp* application = reinterpret_cast<WindowApp*>(glfwGetWindowUserPointer(window));
-    application->aidanicApp->setWindowResizedFlag();
+    Aidanic::setWindowResizedFlag();
 }
 
 std::array<int, 2> getWindowSize() {

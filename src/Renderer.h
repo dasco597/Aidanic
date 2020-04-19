@@ -15,13 +15,11 @@
 // also defined in sphere.rint
 #define SPHERE_COUNT_PER_TLAS 8
 
-class Aidanic;
-
 namespace Renderer {
 
-    // public functions
+    // public functions declarations
 
-    void init(Aidanic* app, std::vector<const char*>& requiredExtensions, glm::mat4 viewInverse, glm::mat4 projInverse, glm::vec3 cameraPos);
+    void init(std::vector<const char*>& requiredExtensions, glm::mat4 viewInverse, glm::mat4 projInverse, glm::vec3 cameraPos);
     void drawFrame(bool framebufferResized, glm::mat4 viewInverse, glm::mat4 projInverse, glm::vec3 cameraPos, bool renderImGui = false);
     void cleanUp();
 

@@ -27,8 +27,6 @@ namespace Renderer {
 
 #pragma region PRIVATE_VARIABLES
 
-Aidanic* aidanicApp;
-
 VkInstance instance;
 VkDebugUtilsMessengerEXT debugMessenger;
 VkSurfaceKHR surface;
@@ -223,9 +221,8 @@ VkCommandPool getCommandPool() { return commandPool; }
 uint32_t getNumSwapchainImages() { return swapchain.numImages; }
 Vk::StorageImage getRenderImage() { return renderImage; }
 
-void init(Aidanic* app, std::vector<const char*>& requiredExtensions, glm::mat4 viewInverse, glm::mat4 projInverse, glm::vec3 cameraPos) {
+void init(std::vector<const char*>& requiredExtensions, glm::mat4 viewInverse, glm::mat4 projInverse, glm::vec3 cameraPos) {
     AID_INFO("Initializing vulkan renderer...");
-    aidanicApp = app;
 
     createInstance(requiredExtensions);
     setupDebugMessenger();
@@ -306,7 +303,7 @@ void setupDebugMessenger() {
 }
 
 void createSurface() {
-    VK_CHECK_RESULT(aidanicApp->createVkSurface(instance, VK_ALLOCATOR, &surface), "failed to create window surface!");
+    VK_CHECK_RESULT(Aidanic::createVkSurface(instance, VK_ALLOCATOR, &surface), "failed to create window surface!");
 }
 
 void pickPhysicalDevice() {
@@ -1424,7 +1421,7 @@ VkExtent2D chooseSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities) {
     if (capabilities.currentExtent.width != UINT32_MAX) {
         return capabilities.currentExtent;
     } else {
-        std::array<int, 2> windowSize = aidanicApp->getWindowSize();
+        std::array<int, 2> windowSize = Aidanic::getWindowSize();
 
         VkExtent2D actualExtent = {
             static_cast<uint32_t>(windowSize[0]),

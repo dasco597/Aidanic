@@ -5,9 +5,6 @@
 #include <map>
 #include <vector>
 
-class Aidanic;
-struct ImGuiIO;
-
 enum struct INPUTS {
 	NONE		= 0,
 	ESC			= (1 << 0),
@@ -35,7 +32,7 @@ namespace IOInterface {
 
 	// public functions
 
-    void init(Aidanic* application, std::vector<const char*>& requiredExtensions, uint32_t width, uint32_t height);
+    void init(std::vector<const char*>& requiredExtensions, uint32_t width, uint32_t height);
 	void glfwErrorCallback(int error, const char* errorMessage);
 	VkResult createVkSurface(VkInstance& instance, const VkAllocationCallbacks* allocator, VkSurfaceKHR* surface);
 
