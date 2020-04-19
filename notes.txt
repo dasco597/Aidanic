@@ -1,6 +1,6 @@
 todo:
 
-remove Aidanic, IOInterface, Renderer classes in favor of static model (so they can access each others functions without fucking pointers and shit)
+remove Aidanic, IOInterface, Renderer, ImGuiVk classes in favor of static model (so they can access each others functions without fucking pointers and shit)
 
 modify spheres from imgui
 goal create ash model (out of ellipses)

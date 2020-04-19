@@ -3,8 +3,6 @@
 #include "glm.hpp"
 #include <map>
 
-class Renderer;
-
 namespace Model {
     struct Sphere {
         glm::vec4 posRadius = glm::vec4(0.f);

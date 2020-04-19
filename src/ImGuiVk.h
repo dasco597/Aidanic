@@ -5,13 +5,12 @@
 #include <vulkan/vulkan.h>
 #include <vulkan/vulkan_core.h>
 
-class Renderer;
 struct ImGuiIO;
 struct ImDrawData;
 
 class ImGuiVk {
 public:
-    void init(Renderer* renderer);
+    void init();
 
     void recordRenderCommands(uint32_t swapchainIndex);
     void recreateFramebuffer();
@@ -23,8 +22,6 @@ public:
     void cleanup();
 
 private:
-    Renderer* renderer;
-
     VkPipeline pipeline;
     VkPipelineLayout pipelineLayout;
 

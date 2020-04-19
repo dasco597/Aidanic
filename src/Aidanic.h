@@ -28,7 +28,6 @@ private:
 
     void cleanup();
 
-    Renderer renderer;
     ImGuiVk imGuiRenderer;
 
     // variables

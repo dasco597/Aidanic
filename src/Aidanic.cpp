@@ -41,7 +41,7 @@ void Aidanic::init() {
 
     updateMatrices();
 
-    renderer.init(this, requiredExtensions, viewInverse, projInverse, viewerPosition);
+    Renderer::init(this, requiredExtensions, viewInverse, projInverse, viewerPosition);
     AID_INFO("Vulkan renderer RTX initialized");
 
     initImGui();
@@ -53,7 +53,7 @@ void Aidanic::initImGui() {
     ImGui::CreateContext();
     ImGui::StyleColorsDark();
 
-    imGuiRenderer.init(&renderer);
+    imGuiRenderer.init();
 
     ImVec4 clear_color = ImVec4(0.45f, 0.55f, 0.60f, 1.00f);
     memcpy(imGuiRenderer.getpClearValue(), &clear_color, 4 * sizeof(float));
@@ -75,7 +75,7 @@ void Aidanic::loop() {
         if (renderImGui) updateImGui();
 
         // submit draw commands for this frame
-        renderer.drawFrame(windowResized, viewInverse, projInverse, viewerPosition, &imGuiRenderer, renderImGui);
+        Renderer::drawFrame(windowResized, viewInverse, projInverse, viewerPosition, &imGuiRenderer, renderImGui);
     }
 }
 
@@ -146,7 +146,7 @@ void Aidanic::updateImGui() {
         case EditorState::NEW :
             if (ImGui::Button("Add ellipsoid")) {
                 ellipsoids.push_back(Model::Ellipsoid(ellipsoidPos, ellipsoidRadius, ellipsoidColor));
-                renderer.addEllipsoid(ellipsoids[ellipsoids.size() - 1]);
+                Renderer::addEllipsoid(ellipsoids[ellipsoids.size() - 1]);
             }
             break;
 
@@ -219,7 +219,7 @@ void Aidanic::cleanup() {
     ImGui::DestroyContext();
     AID_INFO("ImGui cleaned up");
 
-    renderer.cleanUp();
+    Renderer::cleanUp();
     AID_INFO("Vulkan renderer RTX cleaned up");
 
     IOInterface::cleanUp();
