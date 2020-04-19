@@ -1,16 +1,9 @@
 #pragma once
 
-#include "tools/VkHelper.h"
 #include "Model.h"
-
-#define GLM_FORCE_DEPTH_ZERO_TO_ONE
-//#define GLM_FORCE_DEFAULT_ALIGNED_GENTYPES
-#include <glm.hpp>
-#include <vulkan/vulkan.h>
-#include <vulkan/vulkan_core.h>
-
+#include "tools/VkHelper.h"
+#include "vulkan/vulkan.h"
 #include <vector>
-#include <string>
 
 // also defined in sphere.rint
 #define SPHERE_COUNT_PER_TLAS 8

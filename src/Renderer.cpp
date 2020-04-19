@@ -1,10 +1,16 @@
 #include "Renderer.h"
+
 #include "Aidanic.h"
+#include "IOInterface.h"
 #include "ImGuiVk.h"
 #include "tools/config.h"
 
+#define GLM_FORCE_DEPTH_ZERO_TO_ONE
+//#define GLM_FORCE_DEFAULT_ALIGNED_GENTYPES
+#include <glm.hpp>
 #include "ext/matrix_transform.hpp"
 
+#include <string>
 #include <array>
 #include <stdexcept>
 #include <set>
@@ -303,7 +309,7 @@ void setupDebugMessenger() {
 }
 
 void createSurface() {
-    VK_CHECK_RESULT(Aidanic::createVkSurface(instance, VK_ALLOCATOR, &surface), "failed to create window surface!");
+    VK_CHECK_RESULT(IOInterface::createVkSurface(instance, VK_ALLOCATOR, &surface), "failed to create window surface!");
 }
 
 void pickPhysicalDevice() {
@@ -1421,7 +1427,7 @@ VkExtent2D chooseSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities) {
     if (capabilities.currentExtent.width != UINT32_MAX) {
         return capabilities.currentExtent;
     } else {
-        std::array<int, 2> windowSize = Aidanic::getWindowSize();
+        std::array<int, 2> windowSize = IOInterface::getWindowSize();
 
         VkExtent2D actualExtent = {
             static_cast<uint32_t>(windowSize[0]),

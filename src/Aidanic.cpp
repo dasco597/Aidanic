@@ -1,10 +1,20 @@
 #include "Aidanic.h"
-#include "Model.h"
-#include "tools/Log.h"
 
-#include <gtx/rotate_vector.hpp>
+#include "Model.h"
+#include "IOInterface.h"
+#include "Renderer.h"
+#include "ImGuiVk.h"
+#include "tools/Log.h"
+#include "tools/config.h"
+
+#include "imgui.h"
+#include "glm.hpp"
+#include "gtx/rotate_vector.hpp"
+
 #include <iostream>
+#include <array>
 #include <chrono>
+#include <atomic>
 
 using namespace std::chrono;
 
@@ -29,7 +39,6 @@ namespace Aidanic {
     bool renderImGui = true;
     bool cleanedUp = false;
 
-    std::array<int, 2> windowSize = { _WINDOW_SIZE_X, _WINDOW_SIZE_Y };
     Inputs inputs = { INPUTS::NONE };
 
     std::vector<Model::Ellipsoid> ellipsoids;
@@ -59,7 +68,7 @@ namespace Aidanic {
         AID_INFO("~ Initializing Aidanic...");
 
         std::vector<const char*> requiredExtensions;
-        IOInterface::init(requiredExtensions, windowSize[0], windowSize[1]);
+        IOInterface::init(requiredExtensions, _WINDOW_SIZE_X, _WINDOW_SIZE_Y);
         AID_INFO("IO interface initialized");
 
         updateMatrices();
@@ -80,10 +89,6 @@ namespace Aidanic {
 
         ImVec4 clear_color = ImVec4(0.45f, 0.55f, 0.60f, 1.00f);
         memcpy(ImGuiVk::getpClearValue(), &clear_color, 4 * sizeof(float));
-    }
-
-    VkResult createVkSurface(VkInstance& instance, const VkAllocationCallbacks* allocator, VkSurfaceKHR* surface) {
-        return IOInterface::createVkSurface(instance, allocator, surface);
     }
 
     void loop() {
@@ -231,6 +236,7 @@ namespace Aidanic {
     }
 
     void updateMatrices() {
+        std::array<int, 2> windowSize = IOInterface::getWindowSize();
         projInverse = glm::inverse(glm::perspective(glm::radians(fovDegrees), static_cast<float>(windowSize[0] / windowSize[1]), nearPlane, farPlane));
         viewInverse = glm::inverse(glm::lookAt(viewerPosition, viewerPosition + viewerForward, viewerUp));
     }
@@ -249,11 +255,6 @@ namespace Aidanic {
         AID_INFO("IO interface cleaned up");
 
         cleanedUp = true;
-    }
-
-    std::array<int, 2> getWindowSize() {
-        windowSize = IOInterface::getWindowSize();
-        return windowSize;
     }
 
     void setWindowResizedFlag() { windowResized = true; }
