@@ -837,7 +837,7 @@ void createCommandBuffersImageCopy() {
 
 // MAIN LOOP
 
-void drawFrame(bool framebufferResized, glm::mat4 viewInverse, glm::mat4 projInverse, glm::vec3 cameraPos, ImGuiVk* imGuiRenderer, bool renderImGui) {
+void drawFrame(bool framebufferResized, glm::mat4 viewInverse, glm::mat4 projInverse, glm::vec3 cameraPos, bool renderImGui) {
     vkWaitForFences(device, 1, &inFlightFences[currentFrame], VK_TRUE, DEFAULT_FENCE_TIMEOUT);
 
     uint32_t imageIndex;
@@ -846,7 +846,7 @@ void drawFrame(bool framebufferResized, glm::mat4 viewInverse, glm::mat4 projInv
     // TODO framebufferResized? debug and check result values
     if (resultAcquire == VK_ERROR_OUT_OF_DATE_KHR) {
         recreateSwapChain();
-        if (imGuiRenderer) imGuiRenderer->recreateFramebuffer();
+        ImGuiVk::recreateFramebuffer();
         return;
     } else if (resultAcquire != VK_SUCCESS && resultAcquire != VK_SUBOPTIMAL_KHR) {
         AID_ERROR("failed to acquire swap chain image!");
@@ -880,15 +880,15 @@ void drawFrame(bool framebufferResized, glm::mat4 viewInverse, glm::mat4 projInv
     }
 
     // render imGui
-    if (imGuiRenderer && renderImGui) imGuiRenderer->recordRenderCommands(imageIndex);
-    if (imGuiRenderer) renderImGui &= imGuiRenderer->shouldRender(imageIndex);
+    if (renderImGui) ImGuiVk::recordRenderCommands(imageIndex);
+    renderImGui &= ImGuiVk::shouldRender(imageIndex);
     if (renderImGui) {
 
         VkSemaphore waitSemaphores[] = { semaphoresRenderFinished[currentFrame] };
         VkPipelineStageFlags waitStages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
         VkSemaphore signalSemaphores[] = { semaphoresImGuiFinished[currentFrame] };
 
-        VkCommandBuffer commandBuffers[] = { imGuiRenderer->getCommandBuffer(imageIndex) };
+        VkCommandBuffer commandBuffers[] = { ImGuiVk::getCommandBuffer(imageIndex) };
 
         VkSubmitInfo submitInfo{};
         submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
@@ -943,7 +943,7 @@ void drawFrame(bool framebufferResized, glm::mat4 viewInverse, glm::mat4 projInv
 
         if (resultPresent == VK_ERROR_OUT_OF_DATE_KHR || resultPresent == VK_SUBOPTIMAL_KHR || framebufferResized) {
             recreateSwapChain();
-            if (imGuiRenderer) imGuiRenderer->recreateFramebuffer();
+            ImGuiVk::recreateFramebuffer();
         } else if (resultPresent != VK_SUCCESS) {
             AID_ERROR("failed to present swap chain image!");
         }

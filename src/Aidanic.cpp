@@ -53,10 +53,10 @@ void Aidanic::initImGui() {
     ImGui::CreateContext();
     ImGui::StyleColorsDark();
 
-    imGuiRenderer.init();
+    ImGuiVk::init();
 
     ImVec4 clear_color = ImVec4(0.45f, 0.55f, 0.60f, 1.00f);
-    memcpy(imGuiRenderer.getpClearValue(), &clear_color, 4 * sizeof(float));
+    memcpy(ImGuiVk::getpClearValue(), &clear_color, 4 * sizeof(float));
 }
 
 VkResult Aidanic::createVkSurface(VkInstance& instance, const VkAllocationCallbacks* allocator, VkSurfaceKHR* surface) {
@@ -75,7 +75,7 @@ void Aidanic::loop() {
         if (renderImGui) updateImGui();
 
         // submit draw commands for this frame
-        Renderer::drawFrame(windowResized, viewInverse, projInverse, viewerPosition, &imGuiRenderer, renderImGui);
+        Renderer::drawFrame(windowResized, viewInverse, projInverse, viewerPosition, renderImGui);
     }
 }
 
@@ -215,7 +215,7 @@ void Aidanic::updateMatrices() {
 void Aidanic::cleanup() {
     AID_INFO("~ Shutting down Aidanic...");
 
-    imGuiRenderer.cleanup();
+    ImGuiVk::cleanup();
     ImGui::DestroyContext();
     AID_INFO("ImGui cleaned up");
 

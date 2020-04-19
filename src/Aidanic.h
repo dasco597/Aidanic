@@ -28,8 +28,6 @@ private:
 
     void cleanup();
 
-    ImGuiVk imGuiRenderer;
-
     // variables
 
     bool quit = false;

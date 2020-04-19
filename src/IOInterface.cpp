@@ -35,11 +35,11 @@ enum struct INPUTS_INTERNAL {
 std::map<uint32_t, INPUTS> keyBindings;
 std::map<INPUTS_INTERNAL, uint32_t> keyBindingsInternal;
 
-// private functions
+// private function declarations
 
 void setKeyBindings();
 
-// public function implimentations
+// function implimentations
 
 void init(Aidanic* application, std::vector<const char*>& requiredExtensions, uint32_t width, uint32_t height) {
     AID_INFO("Initializing interface...");

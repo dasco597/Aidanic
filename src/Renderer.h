@@ -16,14 +16,13 @@
 #define SPHERE_COUNT_PER_TLAS 8
 
 class Aidanic;
-class ImGuiVk;
 
 namespace Renderer {
 
     // public functions
 
     void init(Aidanic* app, std::vector<const char*>& requiredExtensions, glm::mat4 viewInverse, glm::mat4 projInverse, glm::vec3 cameraPos);
-    void drawFrame(bool framebufferResized, glm::mat4 viewInverse, glm::mat4 projInverse, glm::vec3 cameraPos, ImGuiVk* imGuiRenderer, bool renderImGui = false);
+    void drawFrame(bool framebufferResized, glm::mat4 viewInverse, glm::mat4 projInverse, glm::vec3 cameraPos, bool renderImGui = false);
     void cleanUp();
 
     int addEllipsoid(Model::Ellipsoid ellipsoid); // returns 0 for success
