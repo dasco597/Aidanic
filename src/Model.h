@@ -1,7 +1,7 @@
 #pragma once
 
 #include "glm.hpp"
-#include <map>
+#include <vector>
 
 namespace Model {
     struct Sphere {
@@ -37,6 +37,9 @@ namespace Model {
         void invalidate() { id = -1; }
         bool isValid() { return id != -1; }
 
+        bool operator == (const _ObjectID& other) const { return id == other.id; }
+        bool operator <  (const _ObjectID& other) const { return id <  other.id; }
+
     protected:
         int32_t id = -1;
     };
@@ -44,21 +47,14 @@ namespace Model {
     class EllipsoidID : public _ObjectID {
         using _ObjectID::_ObjectID;
     };
-
-    /*
-    class PrimitiveManager {
-    public:
-        EllipsoidID addEllipsoid(Ellipsoid ellipsoid);
-        void updateEllipsoid(EllipsoidID id, glm::vec3 center, glm::vec3 radius, glm::vec4 color);
-        void deleteEllipsoid(EllipsoidID& id);
-
-        Ellipsoid getEllipsoid(EllipsoidID id);
-        uint32_t getNumEllipsoids() { return numEllipsoids; }
-
-    private:
-        uint32_t numEllipsoids = 0;
-        std::map<EllipsoidID, Ellipsoid> ellipsoids;
-
-        Ellipsoid& getEllipsoidRef(EllipsoidID id);
-    };*/
 }
+
+namespace PrimitiveManager {
+    Model::EllipsoidID addEllipsoid(Model::Ellipsoid ellipsoid);
+    void updateEllipsoid(Model::EllipsoidID id, glm::vec3 center, glm::vec3 radius, glm::vec4 color);
+    void deleteEllipsoid(Model::EllipsoidID& id);
+
+    Model::Ellipsoid getEllipsoid(Model::EllipsoidID id);
+    uint32_t getNumEllipsoids();
+    std::vector<Model::EllipsoidID> getEllipsoidIDs();
+};

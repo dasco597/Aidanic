@@ -16,7 +16,7 @@ namespace Renderer {
     void drawFrame(bool framebufferResized, glm::mat4 viewInverse, glm::mat4 projInverse, glm::vec3 cameraPos, bool renderImGui = false);
     void cleanUp();
 
-    int addEllipsoid(Model::Ellipsoid ellipsoid); // returns 0 for success
+    int addEllipsoid(Model::EllipsoidID ellipsoidID); // returns 0 for success
 
     VkDevice getDevice();
     VkPhysicalDevice getPhysicalDevice();

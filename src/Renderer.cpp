@@ -14,6 +14,7 @@
 #include <array>
 #include <stdexcept>
 #include <set>
+#include <algorithm>
 
 #ifdef NDEBUG
 const bool enableValidationLayers = false;
@@ -70,11 +71,10 @@ VkDescriptorSetLayout descriptorSetLayoutRender, descriptorSetLayoutModels;
 
 Vk::BufferHostVisible bufferUBO;
 
-uint32_t ellipsoidCount = 0;
-std::array<Model::Ellipsoid, SPHERE_COUNT_PER_TLAS> ellipsoids;
+std::vector<Model::EllipsoidID> ellipsoidIDs;
+std::vector<Vk::AccelerationStructure> ellipsoidBLASs; // one ellipsoid per blas
 Vk::BufferDeviceLocal sphereAABBsBuffer;
-std::array<Vk::AccelerationStructure, SPHERE_COUNT_PER_TLAS> sphereBLASs; // one sphere per blas
-std::vector<Vk::BLASInstance> sphereInstances;
+std::vector<Vk::BLASInstance> ellipsoidInstances;
 
 VkDescriptorPool descriptorPoolModels;
 struct PerFrameRenderResources {
@@ -83,7 +83,7 @@ struct PerFrameRenderResources {
     Vk::BufferDeviceLocal spheresBuffer;
 
     bool updateSpheres = false;
-    std::vector<uint32_t> updateSphereIndices;
+    std::vector<Model::EllipsoidID> updateEllipsoidIDs;
 };
 std::vector<PerFrameRenderResources> perFrameRenderResources;
 std::vector<bool> recordCommandBufferRenderSignals;
@@ -178,7 +178,7 @@ void createCommandBuffersImageCopy();
 
 void updateModels(uint32_t swapchainIndex);
 void updateModelTLAS(uint32_t swapchainIndex);
-void updateSpheresBuffer(uint32_t swapchainIndex);
+void updateEllipsoidBuffer(uint32_t swapchainIndex);
 void updateModelDescriptorSet(uint32_t swapchainIndex);
 void recordCommandBufferRender(uint32_t swapchainIndex);
 
@@ -955,16 +955,17 @@ void drawFrame(bool framebufferResized, glm::mat4 viewInverse, glm::mat4 projInv
     currentFrame = (currentFrame + 1) % _MAX_FRAMES_IN_FLIGHT;
 }
 
-int addEllipsoid(Model::Ellipsoid ellipsoid) {
-    // pre-set limit for now
-    if (SPHERE_COUNT_PER_TLAS <= ellipsoidCount) return -1;
+int addEllipsoid(Model::EllipsoidID ellipsoidID) {
+    // preset limit for now
+    if (SPHERE_COUNT_PER_TLAS <= ellipsoidIDs.size()) return -1;
 
-    uint32_t ellipsoidIndex = ellipsoidCount;
-    ellipsoids[ellipsoidIndex] = ellipsoid;
+    uint32_t ellipsoidIndex = ellipsoidIDs.size();
+    ellipsoidIDs.push_back(ellipsoidID);
+    ellipsoidBLASs.push_back(Vk::AccelerationStructure());
 
     // add a BLAS
 
-    Vk::AABB sphereAABB(ellipsoid);
+    Vk::AABB sphereAABB(PrimitiveManager::getEllipsoid(ellipsoidID));
 
     // todo need VK_BUFFER_USAGE_STORAGE_BUFFER_BIT?
     sphereAABBsBuffer.upload(&sphereAABB, sizeof(Vk::AABB), sizeof(Vk::AABB) * ellipsoidIndex, device, physicalDevice, queues.graphics, commandPool);
@@ -986,7 +987,7 @@ int addEllipsoid(Model::Ellipsoid ellipsoid) {
     geometrySphere.geometry.triangles.vertexCount = 0;
     geometrySphere.geometry.triangles.indexCount = 0;
 
-    createBottomLevelAccelerationStructure(sphereBLASs[ellipsoidIndex], &geometrySphere, 1);
+    createBottomLevelAccelerationStructure(ellipsoidBLASs[ellipsoidIndex], &geometrySphere, 1);
 
     // build the blas
 
@@ -995,7 +996,7 @@ int addEllipsoid(Model::Ellipsoid ellipsoid) {
     memoryRequirementsInfo.type = VK_ACCELERATION_STRUCTURE_MEMORY_REQUIREMENTS_TYPE_BUILD_SCRATCH_NV;
 
     VkMemoryRequirements2 blasMemoryrequirements;
-    memoryRequirementsInfo.accelerationStructure = sphereBLASs[ellipsoidIndex].accelerationStructure;
+    memoryRequirementsInfo.accelerationStructure = ellipsoidBLASs[ellipsoidIndex].accelerationStructure;
     vkGetAccelerationStructureMemoryRequirementsNV(device, &memoryRequirementsInfo, &blasMemoryrequirements);
 
     Vk::BufferDeviceLocal scratchBuffer;
@@ -1016,7 +1017,7 @@ int addEllipsoid(Model::Ellipsoid ellipsoid) {
         VK_NULL_HANDLE,
         0,
         VK_FALSE,
-        sphereBLASs[ellipsoidIndex].accelerationStructure,
+        ellipsoidBLASs[ellipsoidIndex].accelerationStructure,
         VK_NULL_HANDLE,
         scratchBuffer.buffer,
         0);
@@ -1024,8 +1025,6 @@ int addEllipsoid(Model::Ellipsoid ellipsoid) {
     Vk::endSingleTimeCommands(device, commandBufferBuild, queues.graphics, commandPool);
 
     scratchBuffer.destroy(device);
-
-    ellipsoidCount++;
 
     // add instance
 
@@ -1042,14 +1041,14 @@ int addEllipsoid(Model::Ellipsoid ellipsoid) {
     geometryInstance.mask = 0xff;
     geometryInstance.instanceOffset = 0;
     geometryInstance.flags = VK_GEOMETRY_INSTANCE_TRIANGLE_CULL_DISABLE_BIT_NV;
-    geometryInstance.accelerationStructureHandle = sphereBLASs[ellipsoidIndex].handle;
+    geometryInstance.accelerationStructureHandle = ellipsoidBLASs[ellipsoidIndex].handle;
 
-    sphereInstances.push_back(geometryInstance);
+    ellipsoidInstances.push_back(geometryInstance);
 
     // signal that a tlas update is required
 
     for (PerFrameRenderResources& resources : perFrameRenderResources) {
-        resources.updateSphereIndices.push_back(ellipsoidIndex);
+        resources.updateEllipsoidIDs.push_back(ellipsoidID);
         resources.updateSpheres = true;
     }
     return 0;
@@ -1063,7 +1062,7 @@ void updateModels(uint32_t swapchainIndex) {
     vkDestroyAccelerationStructureNV(device, resources.tlas.accelerationStructure, nullptr);
     updateModelTLAS(swapchainIndex);
 
-    updateSpheresBuffer(swapchainIndex);
+    updateEllipsoidBuffer(swapchainIndex);
     updateModelDescriptorSet(swapchainIndex);
     recordCommandBufferRenderSignals[swapchainIndex] = true;
 
@@ -1075,14 +1074,14 @@ void updateModelTLAS(uint32_t swapchainIndex) {
 
     Vk::BufferHostVisible instanceBuffer;
 
-    if (sphereInstances.size() != 0) {
-        instanceBuffer.create(VK_BUFFER_USAGE_RAY_TRACING_BIT_NV, sizeof(Vk::BLASInstance) * sphereInstances.size(), device, physicalDevice);
-        instanceBuffer.upload(sphereInstances.data(), sizeof(Vk::BLASInstance) * sphereInstances.size(), 0, device);
+    if (ellipsoidInstances.size() != 0) {
+        instanceBuffer.create(VK_BUFFER_USAGE_RAY_TRACING_BIT_NV, sizeof(Vk::BLASInstance) * ellipsoidInstances.size(), device, physicalDevice);
+        instanceBuffer.upload(ellipsoidInstances.data(), sizeof(Vk::BLASInstance) * ellipsoidInstances.size(), 0, device);
     }
 
     // create top-level acceleration structure
     // todo: don't have to recreate! create with max_spheres
-    createTopLevelAccelerationStructure(tlas, sphereInstances.size());
+    createTopLevelAccelerationStructure(tlas, ellipsoidInstances.size());
 
     // acceleration structure building requires some scratch space to store temporary information
 
@@ -1104,7 +1103,7 @@ void updateModelTLAS(uint32_t swapchainIndex) {
     buildInfo.type = VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_NV;
     buildInfo.geometryCount = 0;
     buildInfo.pGeometries = nullptr;
-    buildInfo.instanceCount = sphereInstances.size();
+    buildInfo.instanceCount = ellipsoidInstances.size();
 
     VkCommandBuffer cmdBuffer = Vk::beginSingleTimeCommands(device, commandPool);
 
@@ -1125,14 +1124,22 @@ void updateModelTLAS(uint32_t swapchainIndex) {
     scratchBuffer.destroy(device);
 }
 
-void updateSpheresBuffer(uint32_t swapchainIndex) {
-    for (uint32_t ellipsoidIndex : perFrameRenderResources[swapchainIndex].updateSphereIndices) {
-        if (SPHERE_COUNT_PER_TLAS <= ellipsoidIndex) {
-            AID_ERROR("trying to update sphere index outside of SPHERE_COUNT_PER_TLAS!");
+void updateEllipsoidBuffer(uint32_t swapchainIndex) {
+    for (Model::EllipsoidID ellipsoidID : perFrameRenderResources[swapchainIndex].updateEllipsoidIDs) {
+
+        std::vector<Model::EllipsoidID>::iterator ellipsoidIDIterator = std::find(ellipsoidIDs.begin(), ellipsoidIDs.end(), ellipsoidID);
+        if (ellipsoidIDIterator == ellipsoidIDs.end()) {
+            AID_ERROR("Renderer::updateEllipsoidBuffer() attempting to update ellipsoid with id not found");
         }
-        perFrameRenderResources[swapchainIndex].spheresBuffer.upload(&ellipsoids[ellipsoidIndex], sizeof(Model::Ellipsoid), sizeof(Model::Ellipsoid) * ellipsoidIndex, device, physicalDevice, queues.graphics, commandPool);
+
+        uint32_t ellipsoidIndex = ellipsoidIDIterator - ellipsoidIDs.begin();
+        Model::Ellipsoid ellipsoid = PrimitiveManager::getEllipsoid(*ellipsoidIDIterator);
+
+        perFrameRenderResources[swapchainIndex].spheresBuffer.upload(&ellipsoid, sizeof(Model::Ellipsoid), sizeof(Model::Ellipsoid) * ellipsoidIndex,
+            device, physicalDevice, queues.graphics, commandPool);
     }
-    perFrameRenderResources[swapchainIndex].updateSphereIndices.clear();
+
+    perFrameRenderResources[swapchainIndex].updateEllipsoidIDs.clear();
 }
 
 void updateModelDescriptorSet(uint32_t swapchainIndex) {
@@ -1268,11 +1275,11 @@ void cleanUp() {
     }
     perFrameRenderResources.clear();
 
-    for (Vk::AccelerationStructure& as : sphereBLASs) {
+    for (Vk::AccelerationStructure& as : ellipsoidBLASs) {
         if (as.memory) vkFreeMemory(device, as.memory, VK_ALLOCATOR);
         if (as.accelerationStructure) vkDestroyAccelerationStructureNV(device, as.accelerationStructure, nullptr);
     }
-    sphereInstances.clear();
+    ellipsoidBLASs.clear();
     sphereAABBsBuffer.destroy(device);
 
     bufferUBO.destroy(device);

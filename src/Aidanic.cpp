@@ -41,8 +41,6 @@ namespace Aidanic {
 
     Inputs inputs = { INPUTS::NONE };
 
-    std::vector<Model::Ellipsoid> ellipsoids;
-
     float fovDegrees = 90.f;
     float nearPlane = 0.1f;
     float farPlane = 10.f;
@@ -122,7 +120,7 @@ namespace Aidanic {
         };
 
         static EditorState editorState = EditorState::NEW;
-        static int selectedEllipsoid = -1;
+        static Model::EllipsoidID selectedEllipsoid;
 
         // scene graph
         {
@@ -130,13 +128,16 @@ namespace Aidanic {
 
             if (ImGui::Button("New ellipsoid")) {
                 editorState = EditorState::NEW;
-                selectedEllipsoid = -1;
+                selectedEllipsoid = Model::EllipsoidID();
             }
-            for (int e = 0; e < ellipsoids.size(); e++) {
-                std::string message = std::string("Ellipsoid ") + std::to_string(e);
+
+            std::vector<Model::EllipsoidID> ellipsoidIDs = PrimitiveManager::getEllipsoidIDs();
+            for (Model::EllipsoidID id : ellipsoidIDs) {
+                std::string message = std::string("Ellipsoid ") + std::to_string(id.getID());
+
                 if (ImGui::Button(message.c_str())) {
                     editorState = EditorState::EDIT;
-                    selectedEllipsoid = e;
+                    selectedEllipsoid = id;
                 }
             }
 
@@ -152,7 +153,7 @@ namespace Aidanic {
                 ImGui::Text("New ellipsoid"); break;
 
             case EditorState::EDIT:
-                std::string message = std::string("Ellipsoid ") + std::to_string(selectedEllipsoid);
+                std::string message = std::string("Ellipsoid ") + std::to_string(selectedEllipsoid.getID());
                 ImGui::Text(message.c_str()); break;
             }
 
@@ -173,8 +174,7 @@ namespace Aidanic {
             {
             case EditorState::NEW:
                 if (ImGui::Button("Add ellipsoid")) {
-                    ellipsoids.push_back(Model::Ellipsoid(ellipsoidPos, ellipsoidRadius, ellipsoidColor));
-                    Renderer::addEllipsoid(ellipsoids[ellipsoids.size() - 1]);
+                    PrimitiveManager::addEllipsoid(Model::Ellipsoid(ellipsoidPos, ellipsoidRadius, ellipsoidColor));
                 }
                 break;
 
