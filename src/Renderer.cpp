@@ -963,21 +963,6 @@ int addEllipsoid(Model::EllipsoidID ellipsoidID) {
 
     // add instance
 
-    glm::mat3x4 transform = {
-        1.0f, 0.0f, 0.0f, 0.0f,
-        0.0f, 1.0f, 0.0f, 0.0f,
-        0.0f, 0.0f, 1.0f, 0.0f
-    };
-    //glm::mat4 transform = glm::rotate(glm::mat4(1.0), _AID_PI * 0.25f, glm::vec3(1.0, 0.0, 0.0));
-
-    Vk::BLASInstance geometryInstance{};
-    geometryInstance.transform = transform;
-    geometryInstance.instanceId = 0;
-    geometryInstance.mask = 0xff;
-    geometryInstance.instanceOffset = 0;
-    geometryInstance.flags = VK_GEOMETRY_INSTANCE_TRIANGLE_CULL_DISABLE_BIT_NV;
-    geometryInstance.accelerationStructureHandle = ellipsoidBLASs[ellipsoidIndex].handle;
-
     ellipsoidInstances.push_back(createInstance(ellipsoidBLASs[ellipsoidIndex].handle));
 
     // signal that a tlas update is required
