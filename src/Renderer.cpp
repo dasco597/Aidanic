@@ -71,7 +71,6 @@ Vk::BufferHostVisible bufferUBO;
 
 std::vector<Model::EllipsoidID> ellipsoidIDs;
 std::vector<Vk::AccelerationStructure> ellipsoidBLASs; // one ellipsoid per blas
-Vk::BufferDeviceLocal sphereAABBsBuffer;
 std::vector<Vk::BLASInstance> ellipsoidInstances;
 
 VkDescriptorPool descriptorPoolModels;
@@ -161,7 +160,6 @@ void createSyncObjects();
 
 void createRenderImage();
 void initPerFrameRenderResources();
-void createAABBBuffers();
 void createUBO(glm::mat4 viewInverse, glm::mat4 projInverse, glm::vec3 cameraPos);
 
 void createDescriptorSetLayouts();
@@ -211,7 +209,8 @@ void recordImageLayoutTransition(VkCommandBuffer commandBuffer, VkImage image, V
 VkDeviceSize getUBOOffsetAligned(VkDeviceSize stride);
 
 // todo move to VkHelper after switching to khr ray tracing
-void createBottomLevelAccelerationStructure(Vk::AccelerationStructure& blas, const VkGeometryNV* geometries, uint32_t geometryCount);
+void createBLAS(Vk::AccelerationStructure& blas, Vk::AABB aabb);
+Vk::BLASInstance createInstance(uint64_t blasHandle);
 void createTopLevelAccelerationStructure(Vk::AccelerationStructure& tlas, uint32_t instanceCount);
 
 #pragma endregion
@@ -242,7 +241,6 @@ void init(std::vector<const char*>& requiredExtensions, glm::mat4 viewInverse, g
     createRenderImage();
     createDescriptorSetLayouts();
     initPerFrameRenderResources();
-    createAABBBuffers();
     createUBO(viewInverse, projInverse, cameraPos);
 
     createRayTracingPipeline();
@@ -572,10 +570,6 @@ void initPerFrameRenderResources() {
         
         updateModelDescriptorSet(i);
     }
-}
-
-void createAABBBuffers() {
-    sphereAABBsBuffer.create(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, sizeof(Vk::AABB) * SPHERE_COUNT_PER_TLAS, device, physicalDevice);
 }
 
 void createUBO(glm::mat4 viewInverse, glm::mat4 projInverse, glm::vec3 cameraPos) {
@@ -965,65 +959,7 @@ int addEllipsoid(Model::EllipsoidID ellipsoidID) {
     // add a BLAS
 
     Vk::AABB sphereAABB(PrimitiveManager::getEllipsoid(ellipsoidID));
-
-    // todo need VK_BUFFER_USAGE_STORAGE_BUFFER_BIT?
-    sphereAABBsBuffer.upload(&sphereAABB, sizeof(Vk::AABB), sizeof(Vk::AABB) * ellipsoidIndex, device, physicalDevice, queues.graphics, commandPool);
-
-    VkGeometryAABBNV geometryAabbSphere = {};
-    geometryAabbSphere.sType = VK_STRUCTURE_TYPE_GEOMETRY_AABB_NV;
-    geometryAabbSphere.aabbData = sphereAABBsBuffer.buffer;
-    geometryAabbSphere.numAABBs = 1;
-    geometryAabbSphere.stride = sizeof(Vk::AABB);
-    geometryAabbSphere.offset = sizeof(Vk::AABB) * ellipsoidIndex;
-
-    VkGeometryNV geometrySphere{};
-    geometrySphere.sType = VK_STRUCTURE_TYPE_GEOMETRY_NV;
-    geometrySphere.flags;// = VK_GEOMETRY_OPAQUE_BIT_NV; TODO need this for scene but not for shadows
-    geometrySphere.geometryType = VK_GEOMETRY_TYPE_AABBS_NV;
-    geometrySphere.geometry.aabbs = geometryAabbSphere;
-
-    geometrySphere.geometry.triangles.sType = VK_STRUCTURE_TYPE_GEOMETRY_TRIANGLES_NV;
-    geometrySphere.geometry.triangles.vertexCount = 0;
-    geometrySphere.geometry.triangles.indexCount = 0;
-
-    createBottomLevelAccelerationStructure(ellipsoidBLASs[ellipsoidIndex], &geometrySphere, 1);
-
-    // build the blas
-
-    VkAccelerationStructureMemoryRequirementsInfoNV memoryRequirementsInfo{};
-    memoryRequirementsInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_MEMORY_REQUIREMENTS_INFO_NV;
-    memoryRequirementsInfo.type = VK_ACCELERATION_STRUCTURE_MEMORY_REQUIREMENTS_TYPE_BUILD_SCRATCH_NV;
-
-    VkMemoryRequirements2 blasMemoryrequirements;
-    memoryRequirementsInfo.accelerationStructure = ellipsoidBLASs[ellipsoidIndex].accelerationStructure;
-    vkGetAccelerationStructureMemoryRequirementsNV(device, &memoryRequirementsInfo, &blasMemoryrequirements);
-
-    Vk::BufferDeviceLocal scratchBuffer;
-    scratchBuffer.create(VK_BUFFER_USAGE_RAY_TRACING_BIT_NV, blasMemoryrequirements.memoryRequirements.size, device, physicalDevice);
-
-    VkCommandBuffer commandBufferBuild = Vk::beginSingleTimeCommands(device, commandPool);
-
-    VkAccelerationStructureInfoNV buildInfo{};
-    buildInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_INFO_NV;
-    buildInfo.type = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_NV;
-    buildInfo.instanceCount = 0;
-    buildInfo.geometryCount = 1;
-    buildInfo.pGeometries = &geometrySphere;
-
-    vkCmdBuildAccelerationStructureNV(
-        commandBufferBuild,
-        &buildInfo,
-        VK_NULL_HANDLE,
-        0,
-        VK_FALSE,
-        ellipsoidBLASs[ellipsoidIndex].accelerationStructure,
-        VK_NULL_HANDLE,
-        scratchBuffer.buffer,
-        0);
-
-    Vk::endSingleTimeCommands(device, commandBufferBuild, queues.graphics, commandPool);
-
-    scratchBuffer.destroy(device);
+    createBLAS(ellipsoidBLASs[ellipsoidIndex], sphereAABB);
 
     // add instance
 
@@ -1042,7 +978,7 @@ int addEllipsoid(Model::EllipsoidID ellipsoidID) {
     geometryInstance.flags = VK_GEOMETRY_INSTANCE_TRIANGLE_CULL_DISABLE_BIT_NV;
     geometryInstance.accelerationStructureHandle = ellipsoidBLASs[ellipsoidIndex].handle;
 
-    ellipsoidInstances.push_back(geometryInstance);
+    ellipsoidInstances.push_back(createInstance(ellipsoidBLASs[ellipsoidIndex].handle));
 
     // signal that a tlas update is required
 
@@ -1066,84 +1002,11 @@ int updateEllipsoid(Model::EllipsoidID ellipsoidID) {
     cleanUpAccelerationStructure(ellipsoidBLASs[ellipsoidIndex]);
 
     Vk::AABB sphereAABB(PrimitiveManager::getEllipsoid(ellipsoidID));
+    createBLAS(ellipsoidBLASs[ellipsoidIndex], sphereAABB);
 
-    // todo need VK_BUFFER_USAGE_STORAGE_BUFFER_BIT?
-    sphereAABBsBuffer.upload(&sphereAABB, sizeof(Vk::AABB), sizeof(Vk::AABB) * ellipsoidIndex, device, physicalDevice, queues.graphics, commandPool);
+    // recreate instance
 
-    VkGeometryAABBNV geometryAabbSphere = {};
-    geometryAabbSphere.sType = VK_STRUCTURE_TYPE_GEOMETRY_AABB_NV;
-    geometryAabbSphere.aabbData = sphereAABBsBuffer.buffer;
-    geometryAabbSphere.numAABBs = 1;
-    geometryAabbSphere.stride = sizeof(Vk::AABB);
-    geometryAabbSphere.offset = sizeof(Vk::AABB) * ellipsoidIndex;
-
-    VkGeometryNV geometrySphere{};
-    geometrySphere.sType = VK_STRUCTURE_TYPE_GEOMETRY_NV;
-    geometrySphere.flags;// = VK_GEOMETRY_OPAQUE_BIT_NV; TODO need this for scene but not for shadows
-    geometrySphere.geometryType = VK_GEOMETRY_TYPE_AABBS_NV;
-    geometrySphere.geometry.aabbs = geometryAabbSphere;
-
-    geometrySphere.geometry.triangles.sType = VK_STRUCTURE_TYPE_GEOMETRY_TRIANGLES_NV;
-    geometrySphere.geometry.triangles.vertexCount = 0;
-    geometrySphere.geometry.triangles.indexCount = 0;
-
-    createBottomLevelAccelerationStructure(ellipsoidBLASs[ellipsoidIndex], &geometrySphere, 1);
-
-    // build the blas
-
-    VkAccelerationStructureMemoryRequirementsInfoNV memoryRequirementsInfo{};
-    memoryRequirementsInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_MEMORY_REQUIREMENTS_INFO_NV;
-    memoryRequirementsInfo.type = VK_ACCELERATION_STRUCTURE_MEMORY_REQUIREMENTS_TYPE_BUILD_SCRATCH_NV;
-
-    VkMemoryRequirements2 blasMemoryrequirements;
-    memoryRequirementsInfo.accelerationStructure = ellipsoidBLASs[ellipsoidIndex].accelerationStructure;
-    vkGetAccelerationStructureMemoryRequirementsNV(device, &memoryRequirementsInfo, &blasMemoryrequirements);
-
-    Vk::BufferDeviceLocal scratchBuffer;
-    scratchBuffer.create(VK_BUFFER_USAGE_RAY_TRACING_BIT_NV, blasMemoryrequirements.memoryRequirements.size, device, physicalDevice);
-
-    VkCommandBuffer commandBufferBuild = Vk::beginSingleTimeCommands(device, commandPool);
-
-    VkAccelerationStructureInfoNV buildInfo{};
-    buildInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_INFO_NV;
-    buildInfo.type = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_NV;
-    buildInfo.instanceCount = 0;
-    buildInfo.geometryCount = 1;
-    buildInfo.pGeometries = &geometrySphere;
-
-    vkCmdBuildAccelerationStructureNV(
-        commandBufferBuild,
-        &buildInfo,
-        VK_NULL_HANDLE,
-        0,
-        VK_FALSE,
-        ellipsoidBLASs[ellipsoidIndex].accelerationStructure,
-        VK_NULL_HANDLE,
-        scratchBuffer.buffer,
-        0);
-
-    Vk::endSingleTimeCommands(device, commandBufferBuild, queues.graphics, commandPool);
-
-    scratchBuffer.destroy(device);
-
-    // add instance
-
-    glm::mat3x4 transform = {
-        1.0f, 0.0f, 0.0f, 0.0f,
-        0.0f, 1.0f, 0.0f, 0.0f,
-        0.0f, 0.0f, 1.0f, 0.0f
-    };
-    //glm::mat4 transform = glm::rotate(glm::mat4(1.0), _AID_PI * 0.25f, glm::vec3(1.0, 0.0, 0.0));
-
-    Vk::BLASInstance geometryInstance{};
-    geometryInstance.transform = transform;
-    geometryInstance.instanceId = 0;
-    geometryInstance.mask = 0xff;
-    geometryInstance.instanceOffset = 0;
-    geometryInstance.flags = VK_GEOMETRY_INSTANCE_TRIANGLE_CULL_DISABLE_BIT_NV;
-    geometryInstance.accelerationStructureHandle = ellipsoidBLASs[ellipsoidIndex].handle;
-
-    ellipsoidInstances[ellipsoidIndex] = geometryInstance;
+    ellipsoidInstances[ellipsoidIndex] = createInstance(ellipsoidBLASs[ellipsoidIndex].handle);
 
     // signal that a tlas update is required
 
@@ -1382,7 +1245,6 @@ void cleanUp() {
     for (Vk::AccelerationStructure& as : ellipsoidBLASs) cleanUpAccelerationStructure(as);
     ellipsoidBLASs.clear();
     ellipsoidInstances.clear();
-    sphereAABBsBuffer.destroy(device);
 
     bufferUBO.destroy(device);
     shaderBindingTable.destroy(device);
@@ -1695,42 +1557,6 @@ VkDeviceSize getUBOOffsetAligned(VkDeviceSize stride) {
     return minAlignment * static_cast<VkDeviceSize>((stride + minAlignment - 1) / minAlignment); // minAlignment * ceil(stride / minAlignment)
 }
 
-void createBottomLevelAccelerationStructure(Vk::AccelerationStructure& blas, const VkGeometryNV* geometries, uint32_t geometryCount) {
-    VkAccelerationStructureInfoNV accelerationStructureInfo{};
-    accelerationStructureInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_INFO_NV;
-    accelerationStructureInfo.type = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_NV;
-    accelerationStructureInfo.instanceCount = 0;
-    accelerationStructureInfo.geometryCount = geometryCount;
-    accelerationStructureInfo.pGeometries = geometries;
-
-    VkAccelerationStructureCreateInfoNV accelerationStructureCI{};
-    accelerationStructureCI.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_NV;
-    accelerationStructureCI.info = accelerationStructureInfo;
-    VK_CHECK_RESULT(vkCreateAccelerationStructureNV(device, &accelerationStructureCI, VK_ALLOCATOR, &blas.accelerationStructure), "failed to create bottom level acceleration structure");
-
-    VkAccelerationStructureMemoryRequirementsInfoNV memoryRequirementsInfo{};
-    memoryRequirementsInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_MEMORY_REQUIREMENTS_INFO_NV;
-    memoryRequirementsInfo.type = VK_ACCELERATION_STRUCTURE_MEMORY_REQUIREMENTS_TYPE_OBJECT_NV;
-    memoryRequirementsInfo.accelerationStructure = blas.accelerationStructure;
-
-    VkMemoryRequirements2 memoryRequirements{};
-    vkGetAccelerationStructureMemoryRequirementsNV(device, &memoryRequirementsInfo, &memoryRequirements);
-
-    VkMemoryAllocateInfo memoryAllocateInfo{};
-    memoryAllocateInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-    memoryAllocateInfo.allocationSize = memoryRequirements.memoryRequirements.size;
-    memoryAllocateInfo.memoryTypeIndex = Vk::findMemoryType(physicalDevice, memoryRequirements.memoryRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-    VK_CHECK_RESULT(vkAllocateMemory(device, &memoryAllocateInfo, VK_ALLOCATOR, &blas.memory), "failed to allocate bottom level acceleration structure memory");
-
-    VkBindAccelerationStructureMemoryInfoNV accelerationStructureMemoryInfo{};
-    accelerationStructureMemoryInfo.sType = VK_STRUCTURE_TYPE_BIND_ACCELERATION_STRUCTURE_MEMORY_INFO_NV;
-    accelerationStructureMemoryInfo.accelerationStructure = blas.accelerationStructure;
-    accelerationStructureMemoryInfo.memory = blas.memory;
-    VK_CHECK_RESULT(vkBindAccelerationStructureMemoryNV(device, 1, &accelerationStructureMemoryInfo), "failed to bind acceleration structure memory");
-
-    VK_CHECK_RESULT(vkGetAccelerationStructureHandleNV(device, blas.accelerationStructure, sizeof(uint64_t), &blas.handle), "failed to get bottom level acceleration structure handle");
-}
-
 void createTopLevelAccelerationStructure(Vk::AccelerationStructure& tlas, uint32_t instanceCount) {
     VkAccelerationStructureInfoNV accelerationStructureInfo{};
     accelerationStructureInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_INFO_NV;
@@ -1764,6 +1590,127 @@ void createTopLevelAccelerationStructure(Vk::AccelerationStructure& tlas, uint32
     VK_CHECK_RESULT(vkBindAccelerationStructureMemoryNV(device, 1, &accelerationStructureMemoryInfo), "failed to bind acceleration structure memory");
 
     VK_CHECK_RESULT(vkGetAccelerationStructureHandleNV(device, tlas.accelerationStructure, sizeof(uint64_t), &tlas.handle), "failed to get top level acceleration structure handle");
+}
+
+void createBLAS(Vk::AccelerationStructure& blas, Vk::AABB aabb) {
+
+    Vk::BufferHostVisible AABBBuffer;
+    AABBBuffer.create(VK_BUFFER_USAGE_TRANSFER_DST_BIT, sizeof(Vk::AABB), device, physicalDevice);
+    AABBBuffer.upload(&aabb, sizeof(Vk::AABB), 0, device);
+
+    VkGeometryAABBNV geometryAabbSphere = {};
+    geometryAabbSphere.sType = VK_STRUCTURE_TYPE_GEOMETRY_AABB_NV;
+    geometryAabbSphere.aabbData = AABBBuffer.buffer;
+    geometryAabbSphere.numAABBs = 1;
+    geometryAabbSphere.stride = sizeof(Vk::AABB);
+    geometryAabbSphere.offset = 0;
+
+    VkGeometryNV geometrySphere{};
+    geometrySphere.sType = VK_STRUCTURE_TYPE_GEOMETRY_NV;
+    geometrySphere.flags;// = VK_GEOMETRY_OPAQUE_BIT_NV; TODO need this for scene but not for shadows
+    geometrySphere.geometryType = VK_GEOMETRY_TYPE_AABBS_NV;
+    geometrySphere.geometry.aabbs = geometryAabbSphere;
+
+    geometrySphere.geometry.triangles.sType = VK_STRUCTURE_TYPE_GEOMETRY_TRIANGLES_NV;
+    geometrySphere.geometry.triangles.vertexCount = 0;
+    geometrySphere.geometry.triangles.indexCount = 0;
+
+    // create BLAS
+    {
+        VkAccelerationStructureInfoNV accelerationStructureInfo{};
+        accelerationStructureInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_INFO_NV;
+        accelerationStructureInfo.type = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_NV;
+        accelerationStructureInfo.instanceCount = 0;
+        accelerationStructureInfo.geometryCount = 1;
+        accelerationStructureInfo.pGeometries = &geometrySphere;
+
+        VkAccelerationStructureCreateInfoNV accelerationStructureCI{};
+        accelerationStructureCI.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_NV;
+        accelerationStructureCI.info = accelerationStructureInfo;
+        VK_CHECK_RESULT(vkCreateAccelerationStructureNV(device, &accelerationStructureCI, VK_ALLOCATOR, &blas.accelerationStructure), "failed to create bottom level acceleration structure");
+
+        VkAccelerationStructureMemoryRequirementsInfoNV memoryRequirementsInfo{};
+        memoryRequirementsInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_MEMORY_REQUIREMENTS_INFO_NV;
+        memoryRequirementsInfo.type = VK_ACCELERATION_STRUCTURE_MEMORY_REQUIREMENTS_TYPE_OBJECT_NV;
+        memoryRequirementsInfo.accelerationStructure = blas.accelerationStructure;
+
+        VkMemoryRequirements2 memoryRequirements{};
+        vkGetAccelerationStructureMemoryRequirementsNV(device, &memoryRequirementsInfo, &memoryRequirements);
+
+        VkMemoryAllocateInfo memoryAllocateInfo{};
+        memoryAllocateInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+        memoryAllocateInfo.allocationSize = memoryRequirements.memoryRequirements.size;
+        memoryAllocateInfo.memoryTypeIndex = Vk::findMemoryType(physicalDevice, memoryRequirements.memoryRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+        VK_CHECK_RESULT(vkAllocateMemory(device, &memoryAllocateInfo, VK_ALLOCATOR, &blas.memory), "failed to allocate bottom level acceleration structure memory");
+
+        VkBindAccelerationStructureMemoryInfoNV accelerationStructureMemoryInfo{};
+        accelerationStructureMemoryInfo.sType = VK_STRUCTURE_TYPE_BIND_ACCELERATION_STRUCTURE_MEMORY_INFO_NV;
+        accelerationStructureMemoryInfo.accelerationStructure = blas.accelerationStructure;
+        accelerationStructureMemoryInfo.memory = blas.memory;
+        VK_CHECK_RESULT(vkBindAccelerationStructureMemoryNV(device, 1, &accelerationStructureMemoryInfo), "failed to bind acceleration structure memory");
+
+        VK_CHECK_RESULT(vkGetAccelerationStructureHandleNV(device, blas.accelerationStructure, sizeof(uint64_t), &blas.handle), "failed to get bottom level acceleration structure handle");
+    }
+
+    // build the blas
+    {
+        VkAccelerationStructureMemoryRequirementsInfoNV memoryRequirementsInfo{};
+        memoryRequirementsInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_MEMORY_REQUIREMENTS_INFO_NV;
+        memoryRequirementsInfo.type = VK_ACCELERATION_STRUCTURE_MEMORY_REQUIREMENTS_TYPE_BUILD_SCRATCH_NV;
+
+        VkMemoryRequirements2 blasMemoryrequirements;
+        memoryRequirementsInfo.accelerationStructure = blas.accelerationStructure;
+        vkGetAccelerationStructureMemoryRequirementsNV(device, &memoryRequirementsInfo, &blasMemoryrequirements);
+
+        Vk::BufferDeviceLocal scratchBuffer;
+        scratchBuffer.create(VK_BUFFER_USAGE_RAY_TRACING_BIT_NV, blasMemoryrequirements.memoryRequirements.size, device, physicalDevice);
+
+        VkCommandBuffer commandBufferBuild = Vk::beginSingleTimeCommands(device, commandPool);
+
+        VkAccelerationStructureInfoNV buildInfo{};
+        buildInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_INFO_NV;
+        buildInfo.type = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_NV;
+        buildInfo.instanceCount = 0;
+        buildInfo.geometryCount = 1;
+        buildInfo.pGeometries = &geometrySphere;
+
+        vkCmdBuildAccelerationStructureNV(
+            commandBufferBuild,
+            &buildInfo,
+            VK_NULL_HANDLE,
+            0,
+            VK_FALSE,
+            blas.accelerationStructure,
+            VK_NULL_HANDLE,
+            scratchBuffer.buffer,
+            0);
+
+        Vk::endSingleTimeCommands(device, commandBufferBuild, queues.graphics, commandPool);
+
+        scratchBuffer.destroy(device);
+    }
+
+    AABBBuffer.destroy(device);
+}
+
+Vk::BLASInstance createInstance(uint64_t blasHandle) {
+
+    glm::mat3x4 transform = {
+        1.0f, 0.0f, 0.0f, 0.0f,
+        0.0f, 1.0f, 0.0f, 0.0f,
+        0.0f, 0.0f, 1.0f, 0.0f
+    };
+    //glm::mat4 transform = glm::rotate(glm::mat4(1.0), _AID_PI * 0.25f, glm::vec3(1.0, 0.0, 0.0));
+
+    Vk::BLASInstance instance{};
+    instance.transform = transform;
+    instance.instanceId = 0;
+    instance.mask = 0xff;
+    instance.instanceOffset = 0;
+    instance.flags = VK_GEOMETRY_INSTANCE_TRIANGLE_CULL_DISABLE_BIT_NV;
+    instance.accelerationStructureHandle = blasHandle;
+
+    return instance;
 }
 
 #pragma endregion
