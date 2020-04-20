@@ -47,6 +47,8 @@ namespace Model {
     class EllipsoidID : public _ObjectID {
         using _ObjectID::_ObjectID;
     };
+
+    bool containsID(std::vector<_ObjectID>& set, _ObjectID id);
 }
 
 namespace PrimitiveManager {

@@ -101,10 +101,8 @@ void WindowApp::windowResizeCallback(GLFWwindow* window, int width, int height) 
     Aidanic::setWindowResizedFlag();
 }
 
-std::array<int, 2> getWindowSize() {
-    std::array<int, 2> windowSize;
-    glfwGetFramebufferSize(window, &windowSize[0], &windowSize[1]);
-    return windowSize;
+void getWindowSize(int* width, int* height) {
+    glfwGetFramebufferSize(window, width, height);
 }
 
 int windowCloseCheck() {
@@ -202,28 +200,25 @@ Inputs getInputs() {
     return inputs;
 }
 
-std::array<double, 2> getMouseChange() {
-    std::array<double, 2> deltaPos = { 0.0, 0.0 };
+void getMouseChange(double& delta_x, double& delta_y) {
     double mousePosCurrent[2];
     glfwGetCursorPos(window, &mousePosCurrent[0], &mousePosCurrent[1]);
 
     switch (controlScheme) {
     case CONTROL_SCHEME::GAMEPLAY:
-        deltaPos[0] = mousePosCurrent[0] - mousePosPrev[0];
-        deltaPos[1] = mousePosCurrent[1] - mousePosPrev[1];
+        delta_x = mousePosCurrent[0] - mousePosPrev[0];
+        delta_y = mousePosCurrent[1] - mousePosPrev[1];
         break;
     case CONTROL_SCHEME::EDITOR:
         if (mouseLeftClickDown) {
-            deltaPos[0] = mousePosCurrent[0] - mousePosPrev[0];
-            deltaPos[1] = mousePosCurrent[1] - mousePosPrev[1];
+            delta_x = mousePosCurrent[0] - mousePosPrev[0];
+            delta_y = mousePosCurrent[1] - mousePosPrev[1];
         }
         break;
     }
 
     mousePosPrev[0] = mousePosCurrent[0];
     mousePosPrev[1] = mousePosCurrent[1];
-
-    return deltaPos;
 }
 
 void cleanUp() {

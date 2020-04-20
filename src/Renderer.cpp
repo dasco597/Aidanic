@@ -11,7 +11,6 @@
 #include "ext/matrix_transform.hpp"
 
 #include <string>
-#include <array>
 #include <stdexcept>
 #include <set>
 #include <algorithm>
@@ -99,15 +98,15 @@ std::vector<VkSemaphore> semaphoresImageAvailable, semaphoresRenderFinished, sem
 std::vector<VkFence> inFlightFences, imagesInFlight;
 size_t currentFrame = 0;
 
-const std::array<const char*, 1> validationLayers = {
+const char* validationLayers[1] = {
     "VK_LAYER_KHRONOS_validation"
 };
-const std::array<const char*, 3> deviceExtensions = {
+const char* deviceExtensions[3] = {
     VK_KHR_SWAPCHAIN_EXTENSION_NAME,
     VK_NV_RAY_TRACING_EXTENSION_NAME,
     VK_KHR_GET_MEMORY_REQUIREMENTS_2_EXTENSION_NAME
 };
-const std::array<const char*, 1> instanceExtensions = {
+const char* instanceExtensions[1] = {
     VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME
 };
 
@@ -278,8 +277,8 @@ void createInstance(std::vector<const char*>& requiredExtensions) {
 
     VkDebugUtilsMessengerCreateInfoEXT debugCreateInfo;
     if (enableValidationLayers) {
-        createInfo.enabledLayerCount = static_cast<uint32_t>(validationLayers.size());
-        createInfo.ppEnabledLayerNames = validationLayers.data();
+        createInfo.enabledLayerCount = ARRAY_SIZE(validationLayers);
+        createInfo.ppEnabledLayerNames = validationLayers;
 
         debugCreateInfo = {};
         debugCreateInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
@@ -374,12 +373,12 @@ void createLogicalDevice() {
 
     createInfo.pEnabledFeatures = &deviceFeatures;
 
-    createInfo.enabledExtensionCount = static_cast<uint32_t>(deviceExtensions.size());
-    createInfo.ppEnabledExtensionNames = deviceExtensions.data();
+    createInfo.enabledExtensionCount = ARRAY_SIZE(deviceExtensions);
+    createInfo.ppEnabledExtensionNames = deviceExtensions;
 
     if (enableValidationLayers) {
-        createInfo.enabledLayerCount = static_cast<uint32_t>(validationLayers.size());
-        createInfo.ppEnabledLayerNames = validationLayers.data();
+        createInfo.enabledLayerCount = ARRAY_SIZE(validationLayers);
+        createInfo.ppEnabledLayerNames = validationLayers;
     } else {
         createInfo.enabledLayerCount = 0;
     }
@@ -644,8 +643,8 @@ void createRayTracingPipeline() {
     pipelineLayoutCI.pSetLayouts = descriptorLayouts;
     vkCreatePipelineLayout(device, &pipelineLayoutCI, VK_ALLOCATOR, &pipelineLayout);
 
-    std::array<VkShaderModule, STAGE_COUNT> shaderModules;
-    std::array<VkPipelineShaderStageCreateInfo, STAGE_COUNT> shaderStages;
+    VkShaderModule shaderModules[STAGE_COUNT] = {};
+    VkPipelineShaderStageCreateInfo shaderStages[STAGE_COUNT] = {};
     shaderStages[STAGE_RAYGEN]                  = Vk::loadShader(device, std::string(_CONFIG::getAssetsPath()) + std::string(SHADER_SRC_RAYGEN),                 VK_SHADER_STAGE_RAYGEN_BIT_NV,       shaderModules[STAGE_RAYGEN]);
     shaderStages[STAGE_MISS_BACKGROUND]         = Vk::loadShader(device, std::string(_CONFIG::getAssetsPath()) + std::string(SHADER_SRC_MISS_BACKGROUND),        VK_SHADER_STAGE_MISS_BIT_NV,         shaderModules[STAGE_MISS_BACKGROUND]);
     shaderStages[STAGE_MISS_SHADOW]             = Vk::loadShader(device, std::string(_CONFIG::getAssetsPath()) + std::string(SHADER_SRC_MISS_SHADOW),            VK_SHADER_STAGE_MISS_BIT_NV,         shaderModules[STAGE_MISS_SHADOW]);
@@ -654,7 +653,7 @@ void createRayTracingPipeline() {
     shaderStages[STAGE_INTERSECTION_ELLIPSOID]  = Vk::loadShader(device, std::string(_CONFIG::getAssetsPath()) + std::string(SHADER_SRC_INTERSECTION_ELLIPSOID), VK_SHADER_STAGE_INTERSECTION_BIT_NV, shaderModules[STAGE_INTERSECTION_ELLIPSOID]);
 
     // ray tracing shader groups
-    std::array<VkRayTracingShaderGroupCreateInfoNV, GROUP_COUNT> shaderGroups{};
+    VkRayTracingShaderGroupCreateInfoNV shaderGroups[GROUP_COUNT] = {};
     for (auto& group : shaderGroups) {
         group.sType = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_NV;
         group.generalShader = VK_SHADER_UNUSED_NV;
@@ -687,10 +686,10 @@ void createRayTracingPipeline() {
 
     VkRayTracingPipelineCreateInfoNV rayPipelineCI{};
     rayPipelineCI.sType = VK_STRUCTURE_TYPE_RAY_TRACING_PIPELINE_CREATE_INFO_NV;
-    rayPipelineCI.stageCount = static_cast<uint32_t>(shaderStages.size());
-    rayPipelineCI.pStages = shaderStages.data();
-    rayPipelineCI.groupCount = static_cast<uint32_t>(shaderGroups.size());
-    rayPipelineCI.pGroups = shaderGroups.data();
+    rayPipelineCI.stageCount = ARRAY_SIZE(shaderStages);
+    rayPipelineCI.pStages = shaderStages;
+    rayPipelineCI.groupCount = ARRAY_SIZE(shaderGroups);
+    rayPipelineCI.pGroups = shaderGroups;
     rayPipelineCI.maxRecursionDepth = 2;
     rayPipelineCI.layout = pipelineLayout;
     VK_CHECK_RESULT(vkCreateRayTracingPipelinesNV(device, VK_NULL_HANDLE, 1, &rayPipelineCI, VK_ALLOCATOR, &pipeline), "failed to create ray tracing pipeline");
@@ -1389,11 +1388,13 @@ bool checkDeviceExtensionSupport(VkPhysicalDevice device) {
     std::vector<VkExtensionProperties> availableExtensions(extensionCount);
     vkEnumerateDeviceExtensionProperties(device, nullptr, &extensionCount, availableExtensions.data());
 
-    std::set<std::string> requiredExtensions(deviceExtensions.begin(), deviceExtensions.end());
+    std::set<std::string> requiredExtensions;
 
-    for (const auto& extension : availableExtensions) {
+    for (int i = 0; i < ARRAY_SIZE(deviceExtensions); i++)
+        requiredExtensions.insert(deviceExtensions[i]);
+
+    for (const auto& extension : availableExtensions)
         requiredExtensions.erase(extension.extensionName);
-    }
 
     return requiredExtensions.empty();
 }
@@ -1434,11 +1435,12 @@ VkExtent2D chooseSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities) {
     if (capabilities.currentExtent.width != UINT32_MAX) {
         return capabilities.currentExtent;
     } else {
-        std::array<int, 2> windowSize = IOInterface::getWindowSize();
+        int width = 0, height = 0;
+        IOInterface::getWindowSize(&width, &height);
 
         VkExtent2D actualExtent = {
-            static_cast<uint32_t>(windowSize[0]),
-            static_cast<uint32_t>(windowSize[1])
+            static_cast<uint32_t>(width),
+            static_cast<uint32_t>(height)
         };
 
         actualExtent.width = std::max(capabilities.minImageExtent.width, std::min(capabilities.maxImageExtent.width, actualExtent.width));

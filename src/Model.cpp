@@ -8,6 +8,14 @@
 
 using namespace Model;
 
+bool Model::containsID(std::vector<_ObjectID>& set, _ObjectID comp_id) {
+    for (_ObjectID set_id : set) {
+        if (set_id == comp_id)
+            return true;
+    }
+    return false;
+}
+
 namespace PrimitiveManager {
 
     // private variables

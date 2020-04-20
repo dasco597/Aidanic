@@ -1,5 +1,7 @@
 #include "ImguiVk.h"
+
 #include "Renderer.h"
+#include "tools/config.h"
 #include <imgui.h>
 
 #define SHADER_SRC_IMGUI_VERT "spirv/imgui.vert.spv"
@@ -358,7 +360,7 @@ namespace ImGuiVk {
         bindingDescription.stride = sizeof(ImDrawVert);
         bindingDescription.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
 
-        std::array<VkVertexInputAttributeDescription, 3> attributeDescriptions = {};
+        VkVertexInputAttributeDescription attributeDescriptions[3];
 
         attributeDescriptions[0].binding = 0;
         attributeDescriptions[0].location = 0;
@@ -376,9 +378,9 @@ namespace ImGuiVk {
         attributeDescriptions[2].offset = offsetof(ImDrawVert, col);
 
         vertexInputInfo.vertexBindingDescriptionCount = 1;
-        vertexInputInfo.vertexAttributeDescriptionCount = static_cast<uint32_t>(attributeDescriptions.size());
+        vertexInputInfo.vertexAttributeDescriptionCount = static_cast<uint32_t>(ARRAY_SIZE(attributeDescriptions));
         vertexInputInfo.pVertexBindingDescriptions = &bindingDescription;
-        vertexInputInfo.pVertexAttributeDescriptions = attributeDescriptions.data();
+        vertexInputInfo.pVertexAttributeDescriptions = attributeDescriptions;
 
         VkPipelineInputAssemblyStateCreateInfo inputAssembly = {};
         inputAssembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;

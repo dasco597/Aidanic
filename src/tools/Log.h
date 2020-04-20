@@ -1,9 +1,9 @@
 #pragma once
-#include "tools/config.h"
 
+#include "tools/config.h"
+#include "spdlog/spdlog.h"
+#include "spdlog/fmt/ostr.h"
 #include <string>
-#include <spdlog/spdlog.h>
-#include <spdlog/fmt/ostr.h>
 
 /*
     Guildlines for logging:

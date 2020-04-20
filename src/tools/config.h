@@ -24,7 +24,8 @@
 #define _MAX_FRAMES_IN_FLIGHT 2
 #define _AID_PI 3.14159f
 
-//#define ARRAY_SIZE(_ARR) ((int)(sizeof(_ARR) / sizeof(*_ARR)) // Size of a static C-style array. Don't use on pointers!
+// Size of a static C-style array. Don't use on pointers!
+#define ARRAY_SIZE(_ARR) static_cast<uint32_t>(sizeof(_ARR) / sizeof(*_ARR))
 
 namespace _CONFIG {
     static char* getAssetsPath() {

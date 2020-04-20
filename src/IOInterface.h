@@ -34,7 +34,7 @@ namespace IOInterface {
 	void glfwErrorCallback(int error, const char* errorMessage);
 	VkResult createVkSurface(VkInstance& instance, const VkAllocationCallbacks* allocator, VkSurfaceKHR* surface);
 
-	std::array<int, 2> getWindowSize();
+	void getWindowSize(int* width, int* height);
 
 	int windowCloseCheck();
 	void minimizeSuspend(); // doesn't return unless window isn't minimized
@@ -42,7 +42,7 @@ namespace IOInterface {
 
 	void updateImGui();
 	Inputs getInputs();
-	std::array<double, 2> getMouseChange();
+	void getMouseChange(double& delta_x, double& delta_y);
 
 	void cleanUp();
 

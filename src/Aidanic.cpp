@@ -12,7 +12,6 @@
 #include "gtx/rotate_vector.hpp"
 
 #include <iostream>
-#include <array>
 #include <chrono>
 #include <atomic>
 
@@ -199,15 +198,16 @@ namespace Aidanic {
         timePrev = high_resolution_clock::now();
 
         // get mouse inputs from window interface
-        std::array<double, 2> mouseMovement = IOInterface::getMouseChange();
+        double mouse_delta_x = 0, mouse_delta_y = 0;
+        IOInterface::getMouseChange(mouse_delta_x, mouse_delta_y);
 
         // LOOK
 
-        float viewAngleHoriz = (double)mouseMovement[0] * -radiansPerMousePosPitch;
+        float viewAngleHoriz = (double)mouse_delta_x * -radiansPerMousePosPitch;
         viewerForward = glm::rotate(viewerForward, viewAngleHoriz, viewerUp);
         viewerRight = glm::cross(viewerForward, viewerUp);
 
-        float viewAngleVert = (double)mouseMovement[1] * -radiansPerMousePosYaw;
+        float viewAngleVert = (double)mouse_delta_y * -radiansPerMousePosYaw;
         viewerForward = glm::rotate(viewerForward, viewAngleVert, viewerRight);
         viewerUp = glm::cross(viewerRight, viewerForward);
 
@@ -236,8 +236,9 @@ namespace Aidanic {
     }
 
     void updateMatrices() {
-        std::array<int, 2> windowSize = IOInterface::getWindowSize();
-        projInverse = glm::inverse(glm::perspective(glm::radians(fovDegrees), static_cast<float>(windowSize[0] / windowSize[1]), nearPlane, farPlane));
+        int width = 0, height = 0;
+        IOInterface::getWindowSize(&width, &height);
+        projInverse = glm::inverse(glm::perspective(glm::radians(fovDegrees), static_cast<float>(width / height), nearPlane, farPlane));
         viewInverse = glm::inverse(glm::lookAt(viewerPosition, viewerPosition + viewerForward, viewerUp));
     }
 
