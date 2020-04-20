@@ -48,7 +48,8 @@ namespace Model {
         using _ObjectID::_ObjectID;
     };
 
-    bool containsID(std::vector<_ObjectID>& set, _ObjectID id);
+    template <class ID_Class>
+    int containsID(std::vector<ID_Class>& set, ID_Class id);
 }
 
 namespace PrimitiveManager {

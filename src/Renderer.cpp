@@ -13,7 +13,6 @@
 #include <string>
 #include <stdexcept>
 #include <set>
-#include <algorithm>
 
 #ifdef NDEBUG
 const bool enableValidationLayers = false;
@@ -1126,13 +1125,12 @@ void updateModelTLAS(uint32_t swapchainIndex) {
 void updateEllipsoidBuffer(uint32_t swapchainIndex) {
     for (Model::EllipsoidID ellipsoidID : perFrameRenderResources[swapchainIndex].updateEllipsoidIDs) {
 
-        std::vector<Model::EllipsoidID>::iterator ellipsoidIDIterator = std::find(ellipsoidIDs.begin(), ellipsoidIDs.end(), ellipsoidID);
-        if (ellipsoidIDIterator == ellipsoidIDs.end()) {
+        int ellipsoidIndex = Model::containsID(ellipsoidIDs, ellipsoidID);
+        if (ellipsoidIndex == -1) {
             AID_ERROR("Renderer::updateEllipsoidBuffer() attempting to update ellipsoid with id not found");
         }
 
-        uint32_t ellipsoidIndex = ellipsoidIDIterator - ellipsoidIDs.begin();
-        Model::Ellipsoid ellipsoid = PrimitiveManager::getEllipsoid(*ellipsoidIDIterator);
+        Model::Ellipsoid ellipsoid = PrimitiveManager::getEllipsoid(ellipsoidIDs[ellipsoidIndex]);
 
         perFrameRenderResources[swapchainIndex].spheresBuffer.upload(&ellipsoid, sizeof(Model::Ellipsoid), sizeof(Model::Ellipsoid) * ellipsoidIndex,
             device, physicalDevice, queues.graphics, commandPool);

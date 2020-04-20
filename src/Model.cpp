@@ -4,16 +4,15 @@
 
 #include <map>
 #include <stdexcept>
-#include <algorithm>
 
 using namespace Model;
 
-bool Model::containsID(std::vector<_ObjectID>& set, _ObjectID comp_id) {
-    for (_ObjectID set_id : set) {
-        if (set_id == comp_id)
-            return true;
+template <class ID_Class>
+int Model::containsID(std::vector<ID_Class>& set, ID_Class id) {
+    for (int i = 0; i < set.size(); i++) {
+        if (set[i] == id) return i;
     }
-    return false;
+    return -1;
 }
 
 namespace PrimitiveManager {
@@ -42,7 +41,7 @@ namespace PrimitiveManager {
         uint32_t idValue = 0;
         while (true) {
             EllipsoidID idTemp(idValue);
-            if (std::find(ellipsoidIDs.begin(), ellipsoidIDs.end(), idTemp) == ellipsoidIDs.end()) // id not already taken
+            if (containsID(ellipsoidIDs, idTemp) == -1) // id not already taken
                 return idTemp;
             idValue++;
         }
