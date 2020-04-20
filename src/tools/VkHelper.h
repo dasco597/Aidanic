@@ -1,7 +1,7 @@
 #pragma once
 
-#include "tools/Log.h"
 #include "Model.h"
+#include "tools/Log.h"
 
 #include <glm.hpp>
 #include <vulkan/vulkan.h>
@@ -83,6 +83,7 @@ namespace Vk {
         uint64_t handle = UINT64_MAX;
     };
 
+    // todo delete this and replace with VkAccelerationStructureInstanceKHR
     struct BLASInstance {
         glm::mat3x4 transform;
         uint32_t instanceId : 24;

@@ -178,7 +178,10 @@ namespace Aidanic {
                 break;
 
             case EditorState::EDIT:
-                ImGui::Button("Update");
+                if (ImGui::Button("Update")) {
+                    PrimitiveManager::updateEllipsoid(selectedEllipsoid, ellipsoidPos, ellipsoidRadius, ellipsoidColor);
+                }
+
                 ImGui::Button("Delete");
                 break;
             }

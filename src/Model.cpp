@@ -9,6 +9,7 @@ using namespace Model;
 
 template <class ID_Class>
 int Model::containsID(std::vector<ID_Class>& set, ID_Class id) {
+    if (!id.isValid()) return -1;
     for (int i = 0; i < set.size(); i++) {
         if (set[i] == id) return i;
     }
@@ -47,6 +48,10 @@ namespace PrimitiveManager {
         }
     }
 
+    Ellipsoid getEllipsoid(EllipsoidID id) {
+        return getEllipsoidRef(id);
+    }
+
     EllipsoidID addEllipsoid(Ellipsoid ellipsoid) {
         EllipsoidID id = getNewEllipsoidID();
         ellipsoids[id] = ellipsoid;
@@ -56,13 +61,10 @@ namespace PrimitiveManager {
         return id;
     }
 
-    Ellipsoid getEllipsoid(EllipsoidID id) {
-        return getEllipsoidRef(id);
-    }
-
     void updateEllipsoid(EllipsoidID id, glm::vec3 center, glm::vec3 radius, glm::vec4 color) {
-        Ellipsoid ellipsoid = getEllipsoidRef(id);
+        Ellipsoid& ellipsoid = getEllipsoidRef(id);
         ellipsoid.update(center, radius, color);
+        Renderer::updateEllipsoid(id);
     }
 
     void deleteEllipsoid(EllipsoidID& id) {

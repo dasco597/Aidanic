@@ -17,6 +17,8 @@ namespace Renderer {
     void cleanUp();
 
     int addEllipsoid(Model::EllipsoidID ellipsoidID); // returns 0 for success
+    int updateEllipsoid(Model::EllipsoidID ellipsoidID);
+    int removeEllipsoid(Model::EllipsoidID ellipsoidID);
 
     VkDevice getDevice();
     VkPhysicalDevice getPhysicalDevice();

@@ -188,6 +188,7 @@ static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(VkDebugUtilsMessageSeverityF
 // clean up
 
 void cleanupSwapChain();
+void cleanUpAccelerationStructure(Vk::AccelerationStructure& ac); // todo move to class once we don't need vkGetDeviceProcAddr
 
 // helper
 
@@ -1052,6 +1053,111 @@ int addEllipsoid(Model::EllipsoidID ellipsoidID) {
     return 0;
 }
 
+int updateEllipsoid(Model::EllipsoidID ellipsoidID) {
+
+    int ellipsoidIndex = Model::containsID(ellipsoidIDs, ellipsoidID);
+    if (ellipsoidIndex == -1) {
+        AID_WARN("Renderer::updateEllipsoid() tried to update ellpisoid {} that hasn't been added", ellipsoidID.getID());
+        return -1;
+    }
+
+    // recreate BLAS
+
+    cleanUpAccelerationStructure(ellipsoidBLASs[ellipsoidIndex]);
+
+    Vk::AABB sphereAABB(PrimitiveManager::getEllipsoid(ellipsoidID));
+
+    // todo need VK_BUFFER_USAGE_STORAGE_BUFFER_BIT?
+    sphereAABBsBuffer.upload(&sphereAABB, sizeof(Vk::AABB), sizeof(Vk::AABB) * ellipsoidIndex, device, physicalDevice, queues.graphics, commandPool);
+
+    VkGeometryAABBNV geometryAabbSphere = {};
+    geometryAabbSphere.sType = VK_STRUCTURE_TYPE_GEOMETRY_AABB_NV;
+    geometryAabbSphere.aabbData = sphereAABBsBuffer.buffer;
+    geometryAabbSphere.numAABBs = 1;
+    geometryAabbSphere.stride = sizeof(Vk::AABB);
+    geometryAabbSphere.offset = sizeof(Vk::AABB) * ellipsoidIndex;
+
+    VkGeometryNV geometrySphere{};
+    geometrySphere.sType = VK_STRUCTURE_TYPE_GEOMETRY_NV;
+    geometrySphere.flags;// = VK_GEOMETRY_OPAQUE_BIT_NV; TODO need this for scene but not for shadows
+    geometrySphere.geometryType = VK_GEOMETRY_TYPE_AABBS_NV;
+    geometrySphere.geometry.aabbs = geometryAabbSphere;
+
+    geometrySphere.geometry.triangles.sType = VK_STRUCTURE_TYPE_GEOMETRY_TRIANGLES_NV;
+    geometrySphere.geometry.triangles.vertexCount = 0;
+    geometrySphere.geometry.triangles.indexCount = 0;
+
+    createBottomLevelAccelerationStructure(ellipsoidBLASs[ellipsoidIndex], &geometrySphere, 1);
+
+    // build the blas
+
+    VkAccelerationStructureMemoryRequirementsInfoNV memoryRequirementsInfo{};
+    memoryRequirementsInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_MEMORY_REQUIREMENTS_INFO_NV;
+    memoryRequirementsInfo.type = VK_ACCELERATION_STRUCTURE_MEMORY_REQUIREMENTS_TYPE_BUILD_SCRATCH_NV;
+
+    VkMemoryRequirements2 blasMemoryrequirements;
+    memoryRequirementsInfo.accelerationStructure = ellipsoidBLASs[ellipsoidIndex].accelerationStructure;
+    vkGetAccelerationStructureMemoryRequirementsNV(device, &memoryRequirementsInfo, &blasMemoryrequirements);
+
+    Vk::BufferDeviceLocal scratchBuffer;
+    scratchBuffer.create(VK_BUFFER_USAGE_RAY_TRACING_BIT_NV, blasMemoryrequirements.memoryRequirements.size, device, physicalDevice);
+
+    VkCommandBuffer commandBufferBuild = Vk::beginSingleTimeCommands(device, commandPool);
+
+    VkAccelerationStructureInfoNV buildInfo{};
+    buildInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_INFO_NV;
+    buildInfo.type = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_NV;
+    buildInfo.instanceCount = 0;
+    buildInfo.geometryCount = 1;
+    buildInfo.pGeometries = &geometrySphere;
+
+    vkCmdBuildAccelerationStructureNV(
+        commandBufferBuild,
+        &buildInfo,
+        VK_NULL_HANDLE,
+        0,
+        VK_FALSE,
+        ellipsoidBLASs[ellipsoidIndex].accelerationStructure,
+        VK_NULL_HANDLE,
+        scratchBuffer.buffer,
+        0);
+
+    Vk::endSingleTimeCommands(device, commandBufferBuild, queues.graphics, commandPool);
+
+    scratchBuffer.destroy(device);
+
+    // add instance
+
+    glm::mat3x4 transform = {
+        1.0f, 0.0f, 0.0f, 0.0f,
+        0.0f, 1.0f, 0.0f, 0.0f,
+        0.0f, 0.0f, 1.0f, 0.0f
+    };
+    //glm::mat4 transform = glm::rotate(glm::mat4(1.0), _AID_PI * 0.25f, glm::vec3(1.0, 0.0, 0.0));
+
+    Vk::BLASInstance geometryInstance{};
+    geometryInstance.transform = transform;
+    geometryInstance.instanceId = 0;
+    geometryInstance.mask = 0xff;
+    geometryInstance.instanceOffset = 0;
+    geometryInstance.flags = VK_GEOMETRY_INSTANCE_TRIANGLE_CULL_DISABLE_BIT_NV;
+    geometryInstance.accelerationStructureHandle = ellipsoidBLASs[ellipsoidIndex].handle;
+
+    ellipsoidInstances[ellipsoidIndex] = geometryInstance;
+
+    // signal that a tlas update is required
+
+    for (PerFrameRenderResources& resources : perFrameRenderResources) {
+        resources.updateEllipsoidIDs.push_back(ellipsoidID);
+        resources.updateSpheres = true;
+    }
+    return 0;
+}
+
+int removeEllipsoid(Model::EllipsoidID ellipsoidID) {
+    return 0;
+}
+
 void updateModels(uint32_t swapchainIndex) {
     PerFrameRenderResources& resources = perFrameRenderResources[swapchainIndex];
     if (!resources.updateSpheres) return;
@@ -1272,11 +1378,10 @@ void cleanUp() {
     }
     perFrameRenderResources.clear();
 
-    for (Vk::AccelerationStructure& as : ellipsoidBLASs) {
-        if (as.memory) vkFreeMemory(device, as.memory, VK_ALLOCATOR);
-        if (as.accelerationStructure) vkDestroyAccelerationStructureNV(device, as.accelerationStructure, nullptr);
-    }
+    ellipsoidIDs.clear();
+    for (Vk::AccelerationStructure& as : ellipsoidBLASs) cleanUpAccelerationStructure(as);
     ellipsoidBLASs.clear();
+    ellipsoidInstances.clear();
     sphereAABBsBuffer.destroy(device);
 
     bufferUBO.destroy(device);
@@ -1311,6 +1416,11 @@ void cleanupSwapChain() {
     commandBuffersImageCopy.clear();
     vkDestroyDescriptorPool(device, descriptorPoolRender, VK_ALLOCATOR);
     renderImage.destroy(device);
+}
+
+void cleanUpAccelerationStructure(Vk::AccelerationStructure& as) {
+    if (as.memory) vkFreeMemory(device, as.memory, VK_ALLOCATOR);
+    if (as.accelerationStructure) Renderer::vkDestroyAccelerationStructureNV(device, as.accelerationStructure, nullptr);
 }
 
 // HELPER FUNCTIONS
