@@ -182,7 +182,10 @@ namespace Aidanic {
                     PrimitiveManager::updateEllipsoid(selectedEllipsoid, ellipsoidPos, ellipsoidRadius, ellipsoidColor);
                 }
 
-                ImGui::Button("Delete");
+                if (ImGui::Button("Delete")) {
+                    PrimitiveManager::deleteEllipsoid(selectedEllipsoid);
+                    editorState = EditorState::NEW;
+                }
                 break;
             }
 

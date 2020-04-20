@@ -79,7 +79,7 @@ struct PerFrameRenderResources {
     VkDescriptorSet descriptorSetModels;
     Vk::BufferDeviceLocal spheresBuffer;
 
-    bool updateSpheres = false;
+    bool updateEllipsoidTLAS = false;
     std::vector<Model::EllipsoidID> updateEllipsoidIDs;
 };
 std::vector<PerFrameRenderResources> perFrameRenderResources;
@@ -968,8 +968,8 @@ int addEllipsoid(Model::EllipsoidID ellipsoidID) {
     // signal that a tlas update is required
 
     for (PerFrameRenderResources& resources : perFrameRenderResources) {
+        resources.updateEllipsoidTLAS = true;
         resources.updateEllipsoidIDs.push_back(ellipsoidID);
-        resources.updateSpheres = true;
     }
     return 0;
 }
@@ -996,29 +996,47 @@ int updateEllipsoid(Model::EllipsoidID ellipsoidID) {
     // signal that a tlas update is required
 
     for (PerFrameRenderResources& resources : perFrameRenderResources) {
+        resources.updateEllipsoidTLAS = true;
         resources.updateEllipsoidIDs.push_back(ellipsoidID);
-        resources.updateSpheres = true;
     }
     return 0;
 }
 
 int removeEllipsoid(Model::EllipsoidID ellipsoidID) {
+
+    int ellipsoidIndex = Model::containsID(ellipsoidIDs, ellipsoidID);
+    if (ellipsoidIndex == -1) {
+        AID_WARN("Renderer::removeEllipsoid() tried to remove ellpisoid {} that hasn't been added", ellipsoidID.getID());
+        return -1;
+    }
+
+    cleanUpAccelerationStructure(ellipsoidBLASs[ellipsoidIndex]);
+
+    ellipsoidBLASs.erase(ellipsoidBLASs.begin() + ellipsoidIndex);
+    ellipsoidInstances.erase(ellipsoidInstances.begin() + ellipsoidIndex);
+    ellipsoidIDs.erase(ellipsoidIDs.begin() + ellipsoidIndex);
+
+    for (PerFrameRenderResources& resources : perFrameRenderResources) {
+        resources.updateEllipsoidTLAS = true;
+        for (int i = ellipsoidIndex; i < ellipsoidIDs.size(); i++)
+            resources.updateEllipsoidIDs.push_back(ellipsoidIDs[i]);
+    }
     return 0;
 }
 
 void updateModels(uint32_t swapchainIndex) {
-    PerFrameRenderResources& resources = perFrameRenderResources[swapchainIndex];
-    if (!resources.updateSpheres) return;
+    updateEllipsoidBuffer(swapchainIndex);
 
-    vkFreeMemory(device, resources.tlas.memory, VK_ALLOCATOR);
-    vkDestroyAccelerationStructureNV(device, resources.tlas.accelerationStructure, nullptr);
+    if (!perFrameRenderResources[swapchainIndex].updateEllipsoidTLAS) return;
+
+    vkFreeMemory(device, perFrameRenderResources[swapchainIndex].tlas.memory, VK_ALLOCATOR);
+    vkDestroyAccelerationStructureNV(device, perFrameRenderResources[swapchainIndex].tlas.accelerationStructure, nullptr);
     updateModelTLAS(swapchainIndex);
 
-    updateEllipsoidBuffer(swapchainIndex);
     updateModelDescriptorSet(swapchainIndex);
     recordCommandBufferRenderSignals[swapchainIndex] = true;
 
-    resources.updateSpheres = false;
+    perFrameRenderResources[swapchainIndex].updateEllipsoidTLAS = false;
 }
 
 void updateModelTLAS(uint32_t swapchainIndex) {
@@ -1081,7 +1099,7 @@ void updateEllipsoidBuffer(uint32_t swapchainIndex) {
 
         int ellipsoidIndex = Model::containsID(ellipsoidIDs, ellipsoidID);
         if (ellipsoidIndex == -1) {
-            AID_ERROR("Renderer::updateEllipsoidBuffer() attempting to update ellipsoid with id not found");
+            AID_ERROR("Renderer::updateEllipsoidBuffer() attempting to update ellipsoid id {} that hasn't been added", ellipsoidID.getID());
         }
 
         Model::Ellipsoid ellipsoid = PrimitiveManager::getEllipsoid(ellipsoidIDs[ellipsoidIndex]);

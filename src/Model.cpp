@@ -68,7 +68,9 @@ namespace PrimitiveManager {
     }
 
     void deleteEllipsoid(EllipsoidID& id) {
+        Renderer::removeEllipsoid(id);
         ellipsoids.erase(id);
+        ellipsoidIDs.erase(ellipsoidIDs.begin() + containsID(ellipsoidIDs, id));
         id.invalidate();
     }
 
