@@ -25,7 +25,9 @@ nv ray tracing https://github.com/nvpro-samples/vk_raytracing_tutorial
 https://kosmonautblog.wordpress.com/2017/05/01/signed-distance-field-rendering-journey-pt-1/
 
 https://soloud.handmade.network/
+https://aras-p.info/blog/2020/04/11/Various-details-about-Handles/ transform handles
 
-functionality:
+primitive select:
 
-add sphere,
+write object id to uint image during ray tracing render
+get id value at clicked pixel

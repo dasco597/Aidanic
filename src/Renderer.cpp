@@ -41,6 +41,8 @@ VkPhysicalDevice physicalDevice;
 VkPhysicalDeviceProperties physicalDeviceProperties{};
 VkMemoryRequirements memoryRequirements{};
 
+int swapchainIndexLastRendered = -1;
+
 struct {
     VkQueue graphics, compute, present;
 } queues;
@@ -61,20 +63,25 @@ VkPipeline pipeline;
 VkPipelineLayout pipelineLayout;
 
 VkCommandPool commandPool;
-std::vector<VkCommandBuffer> commandBuffersImageCopy;
 
 VkDescriptorSet descriptorSetRender;
 VkDescriptorPool descriptorPoolRender;
 VkDescriptorSetLayout descriptorSetLayoutRender, descriptorSetLayoutModels;
 
-Vk::BufferHostVisible bufferUBO;
+Vk::BufferHostVisible bufferUBO; // per swapchain image
 
 std::vector<Model::EllipsoidID> ellipsoidIDs;
 std::vector<Vk::AccelerationStructure> ellipsoidBLASs; // one ellipsoid per blas
 std::vector<Vk::BLASInstance> ellipsoidInstances;
 
 VkDescriptorPool descriptorPoolModels;
-struct PerFrameRenderResources {
+
+struct _PerSwapchainImage {
+    VkCommandBuffer commandBufferRender;
+    VkCommandBuffer commandBufferImageCopy;
+    VkFence renderComplete;
+    bool rerecordRenderCommands = false;
+
     Vk::AccelerationStructure tlas;
     VkDescriptorSet descriptorSetModels;
     Vk::BufferDeviceLocal spheresBuffer;
@@ -82,9 +89,7 @@ struct PerFrameRenderResources {
     bool updateEllipsoidTLAS = false;
     std::vector<Model::EllipsoidID> updateEllipsoidIDs;
 };
-std::vector<PerFrameRenderResources> perFrameRenderResources;
-std::vector<bool> recordCommandBufferRenderSignals;
-std::vector<VkCommandBuffer> commandBuffersRender;
+std::vector<_PerSwapchainImage> perSwapchainImage;
 
 struct UniformData {
     glm::mat4 viewInverse = glm::mat4(1.0f);
@@ -93,7 +98,7 @@ struct UniformData {
 };
 
 std::vector<VkSemaphore> semaphoresImageAvailable, semaphoresRenderFinished, semaphoresImGuiFinished, semaphoresImageCopyFinished;
-std::vector<VkFence> inFlightFences, imagesInFlight;
+std::vector<VkFence> inFlightFences;
 size_t currentFrame = 0;
 
 const char* validationLayers[1] = {
@@ -447,6 +452,8 @@ void createSwapChain() {
 
     swapchain.format = surfaceFormat.format;
     swapchain.extent = extent;
+
+    perSwapchainImage.resize(imageCount);
 }
 
 void createCommandPool() {
@@ -467,7 +474,6 @@ void createSyncObjects() {
     semaphoresImageCopyFinished.resize(_MAX_FRAMES_IN_FLIGHT);
 
     inFlightFences.resize(_MAX_FRAMES_IN_FLIGHT);
-    imagesInFlight.resize(swapchain.numImages, VK_NULL_HANDLE);
 
     VkSemaphoreCreateInfo semaphoreInfo = {};
     semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
@@ -534,30 +540,29 @@ void createRenderImage() {
 }
 
 void initPerFrameRenderResources() {
-    perFrameRenderResources.resize(swapchain.numImages);
 
     // create descriptor pool
 
     std::vector<VkDescriptorPoolSize> poolSizes = {
-        { VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_NV, static_cast<uint32_t>(perFrameRenderResources.size()) },
-        { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, static_cast<uint32_t>(perFrameRenderResources.size()) }
+        { VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_NV, static_cast<uint32_t>(perSwapchainImage.size()) },
+        { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, static_cast<uint32_t>(perSwapchainImage.size()) }
     };
 
     VkDescriptorPoolCreateInfo descriptorPoolCI{};
     descriptorPoolCI.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
     descriptorPoolCI.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
     descriptorPoolCI.pPoolSizes = poolSizes.data();
-    descriptorPoolCI.maxSets = static_cast<uint32_t>(perFrameRenderResources.size());
+    descriptorPoolCI.maxSets = static_cast<uint32_t>(perSwapchainImage.size());
     VK_CHECK_RESULT(vkCreateDescriptorPool(device, &descriptorPoolCI, VK_ALLOCATOR, &descriptorPoolModels), "failed to create descriptor pool");
 
-    for (int i = 0; i < perFrameRenderResources.size(); i++) {
+    for (int i = 0; i < perSwapchainImage.size(); i++) {
         // create tlas
 
         updateModelTLAS(i);
 
         // init ellipsoids buffer
 
-        perFrameRenderResources[i].spheresBuffer.create(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, sizeof(Model::Ellipsoid) * SPHERE_COUNT_PER_TLAS, device, physicalDevice);
+        perSwapchainImage[i].spheresBuffer.create(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, sizeof(Model::Ellipsoid) * SPHERE_COUNT_PER_TLAS, device, physicalDevice);
 
         // create descriptor set
 
@@ -566,7 +571,7 @@ void initPerFrameRenderResources() {
         descriptorSetAllocateInfo.descriptorPool = descriptorPoolModels;
         descriptorSetAllocateInfo.descriptorSetCount = 1;
         descriptorSetAllocateInfo.pSetLayouts = &descriptorSetLayoutModels;
-        vkAllocateDescriptorSets(device, &descriptorSetAllocateInfo, &perFrameRenderResources[i].descriptorSetModels);
+        vkAllocateDescriptorSets(device, &descriptorSetAllocateInfo, &perSwapchainImage[i].descriptorSetModels);
         
         updateModelDescriptorSet(i);
     }
@@ -758,35 +763,34 @@ void createDescriptorSetRender() {
 }
 
 void createCommandBuffersRender() {
-    commandBuffersRender.resize(swapchain.numImages);
-    recordCommandBufferRenderSignals.resize(swapchain.numImages, false);
-
     VkCommandBufferAllocateInfo allocInfo{};
     allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-    allocInfo.commandBufferCount = commandBuffersRender.size();
+    allocInfo.commandBufferCount = 1;
     allocInfo.commandPool = commandPool;
     allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-    vkAllocateCommandBuffers(device, &allocInfo, commandBuffersRender.data());
 
-    for (int i = 0; i < commandBuffersRender.size(); i++)  recordCommandBufferRender(i);
+    for (int i = 0; i < perSwapchainImage.size(); i++) {
+        vkAllocateCommandBuffers(device, &allocInfo, &perSwapchainImage[i].commandBufferRender);
+        recordCommandBufferRender(i);
+    }
 }
 
 void createCommandBuffersImageCopy() {
-    commandBuffersImageCopy.resize(swapchain.numImages);
     VkCommandBufferAllocateInfo allocInfo{};
     allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-    allocInfo.commandBufferCount = commandBuffersImageCopy.size();
+    allocInfo.commandBufferCount = 1;
     allocInfo.commandPool = commandPool;
     allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-    vkAllocateCommandBuffers(device, &allocInfo, commandBuffersImageCopy.data());
+    for (int i = 0; i < perSwapchainImage.size(); i++)
+        vkAllocateCommandBuffers(device, &allocInfo, &perSwapchainImage[i].commandBufferImageCopy);
 
     // begin info
     VkCommandBufferBeginInfo beginInfo{};
     beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
     VkImageSubresourceRange subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
 
-    for (int i = 0; i < commandBuffersImageCopy.size(); i++) {
-        VkCommandBuffer& commandBuffer = commandBuffersImageCopy[i];
+    for (int i = 0; i < perSwapchainImage.size(); i++) {
+        VkCommandBuffer& commandBuffer = perSwapchainImage[i].commandBufferImageCopy;
         VK_CHECK_RESULT(vkBeginCommandBuffer(commandBuffer, &beginInfo), "failed to begin command buffer");
 
         // copy ray tracing output to swapchain image
@@ -849,16 +853,16 @@ void drawFrame(bool framebufferResized, glm::mat4 viewInverse, glm::mat4 projInv
     }
 
     updateModels(imageIndex);
-    if (recordCommandBufferRenderSignals[imageIndex]) {
+    if (perSwapchainImage[imageIndex].rerecordRenderCommands) {
         recordCommandBufferRender(imageIndex);
-        recordCommandBufferRenderSignals[imageIndex] = false;
+        perSwapchainImage[imageIndex].rerecordRenderCommands = false;
     }
     updateUniformBuffer(viewInverse, projInverse, cameraPos, imageIndex);
 
-    if (imagesInFlight[imageIndex] != VK_NULL_HANDLE) {
-        vkWaitForFences(device, 1, &imagesInFlight[imageIndex], VK_TRUE, DEFAULT_FENCE_TIMEOUT);
+    if (perSwapchainImage[imageIndex].renderComplete != VK_NULL_HANDLE) {
+        vkWaitForFences(device, 1, &perSwapchainImage[imageIndex].renderComplete, VK_TRUE, DEFAULT_FENCE_TIMEOUT);
     }
-    imagesInFlight[imageIndex] = inFlightFences[currentFrame];
+    perSwapchainImage[imageIndex].renderComplete = inFlightFences[currentFrame];
 
     // ray tracing dispatch
     {
@@ -867,7 +871,7 @@ void drawFrame(bool framebufferResized, glm::mat4 viewInverse, glm::mat4 projInv
         VkSubmitInfo submitInfo{};
         submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
         submitInfo.commandBufferCount = 1;
-        submitInfo.pCommandBuffers = &commandBuffersRender[imageIndex];
+        submitInfo.pCommandBuffers = &perSwapchainImage[imageIndex].commandBufferRender;
         submitInfo.waitSemaphoreCount = 0;
         submitInfo.signalSemaphoreCount = 1;
         submitInfo.pSignalSemaphores = signalSemaphores;
@@ -911,7 +915,7 @@ void drawFrame(bool framebufferResized, glm::mat4 viewInverse, glm::mat4 projInv
         VkSubmitInfo submitInfo{};
         submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
         submitInfo.commandBufferCount = 1;
-        submitInfo.pCommandBuffers = &commandBuffersImageCopy[imageIndex];
+        submitInfo.pCommandBuffers = &perSwapchainImage[imageIndex].commandBufferImageCopy;
         submitInfo.waitSemaphoreCount = 2;
         submitInfo.pWaitSemaphores = waitSemaphores;
         submitInfo.pWaitDstStageMask = waitStages;
@@ -945,6 +949,7 @@ void drawFrame(bool framebufferResized, glm::mat4 viewInverse, glm::mat4 projInv
         }
     }
 
+    swapchainIndexLastRendered = imageIndex;
     currentFrame = (currentFrame + 1) % _MAX_FRAMES_IN_FLIGHT;
 }
 
@@ -967,9 +972,9 @@ int addEllipsoid(Model::EllipsoidID ellipsoidID) {
 
     // signal that a tlas update is required
 
-    for (PerFrameRenderResources& resources : perFrameRenderResources) {
-        resources.updateEllipsoidTLAS = true;
-        resources.updateEllipsoidIDs.push_back(ellipsoidID);
+    for (int i = 0; i < perSwapchainImage.size(); i++) {
+        perSwapchainImage[i].updateEllipsoidTLAS = true;
+        perSwapchainImage[i].updateEllipsoidIDs.push_back(ellipsoidID);
     }
     return 0;
 }
@@ -995,9 +1000,9 @@ int updateEllipsoid(Model::EllipsoidID ellipsoidID) {
 
     // signal that a tlas update is required
 
-    for (PerFrameRenderResources& resources : perFrameRenderResources) {
-        resources.updateEllipsoidTLAS = true;
-        resources.updateEllipsoidIDs.push_back(ellipsoidID);
+    for (int i = 0; i < perSwapchainImage.size(); i++) {
+        perSwapchainImage[i].updateEllipsoidTLAS = true;
+        perSwapchainImage[i].updateEllipsoidIDs.push_back(ellipsoidID);
     }
     return 0;
 }
@@ -1016,10 +1021,10 @@ int removeEllipsoid(Model::EllipsoidID ellipsoidID) {
     ellipsoidInstances.erase(ellipsoidInstances.begin() + ellipsoidIndex);
     ellipsoidIDs.erase(ellipsoidIDs.begin() + ellipsoidIndex);
 
-    for (PerFrameRenderResources& resources : perFrameRenderResources) {
-        resources.updateEllipsoidTLAS = true;
+    for (int i = 0; i < perSwapchainImage.size(); i++) {
+        perSwapchainImage[i].updateEllipsoidTLAS = true;
         for (int i = ellipsoidIndex; i < ellipsoidIDs.size(); i++)
-            resources.updateEllipsoidIDs.push_back(ellipsoidIDs[i]);
+            perSwapchainImage[i].updateEllipsoidIDs.push_back(ellipsoidIDs[i]);
     }
     return 0;
 }
@@ -1027,20 +1032,20 @@ int removeEllipsoid(Model::EllipsoidID ellipsoidID) {
 void updateModels(uint32_t swapchainIndex) {
     updateEllipsoidBuffer(swapchainIndex);
 
-    if (!perFrameRenderResources[swapchainIndex].updateEllipsoidTLAS) return;
+    if (!perSwapchainImage[swapchainIndex].updateEllipsoidTLAS) return;
 
-    vkFreeMemory(device, perFrameRenderResources[swapchainIndex].tlas.memory, VK_ALLOCATOR);
-    vkDestroyAccelerationStructureNV(device, perFrameRenderResources[swapchainIndex].tlas.accelerationStructure, nullptr);
+    vkFreeMemory(device, perSwapchainImage[swapchainIndex].tlas.memory, VK_ALLOCATOR);
+    vkDestroyAccelerationStructureNV(device, perSwapchainImage[swapchainIndex].tlas.accelerationStructure, nullptr);
     updateModelTLAS(swapchainIndex);
 
     updateModelDescriptorSet(swapchainIndex);
-    recordCommandBufferRenderSignals[swapchainIndex] = true;
+    perSwapchainImage[swapchainIndex].rerecordRenderCommands = true;
 
-    perFrameRenderResources[swapchainIndex].updateEllipsoidTLAS = false;
+    perSwapchainImage[swapchainIndex].updateEllipsoidTLAS = false;
 }
 
 void updateModelTLAS(uint32_t swapchainIndex) {
-    Vk::AccelerationStructure& tlas = perFrameRenderResources[swapchainIndex].tlas;
+    Vk::AccelerationStructure& tlas = perSwapchainImage[swapchainIndex].tlas;
 
     Vk::BufferHostVisible instanceBuffer;
 
@@ -1095,7 +1100,7 @@ void updateModelTLAS(uint32_t swapchainIndex) {
 }
 
 void updateEllipsoidBuffer(uint32_t swapchainIndex) {
-    for (Model::EllipsoidID ellipsoidID : perFrameRenderResources[swapchainIndex].updateEllipsoidIDs) {
+    for (Model::EllipsoidID ellipsoidID : perSwapchainImage[swapchainIndex].updateEllipsoidIDs) {
 
         int ellipsoidIndex = Model::containsID(ellipsoidIDs, ellipsoidID);
         if (ellipsoidIndex == -1) {
@@ -1104,22 +1109,22 @@ void updateEllipsoidBuffer(uint32_t swapchainIndex) {
 
         Model::Ellipsoid ellipsoid = PrimitiveManager::getEllipsoid(ellipsoidIDs[ellipsoidIndex]);
 
-        perFrameRenderResources[swapchainIndex].spheresBuffer.upload(&ellipsoid, sizeof(Model::Ellipsoid), sizeof(Model::Ellipsoid) * ellipsoidIndex,
+        perSwapchainImage[swapchainIndex].spheresBuffer.upload(&ellipsoid, sizeof(Model::Ellipsoid), sizeof(Model::Ellipsoid) * ellipsoidIndex,
             device, physicalDevice, queues.graphics, commandPool);
     }
 
-    perFrameRenderResources[swapchainIndex].updateEllipsoidIDs.clear();
+    perSwapchainImage[swapchainIndex].updateEllipsoidIDs.clear();
 }
 
 void updateModelDescriptorSet(uint32_t swapchainIndex) {
-    VkDescriptorSet& descriptorSet = perFrameRenderResources[swapchainIndex].descriptorSetModels;
+    VkDescriptorSet& descriptorSet = perSwapchainImage[swapchainIndex].descriptorSetModels;
 
     // acceleration structure descriptor
 
     VkWriteDescriptorSetAccelerationStructureNV descriptorAccelerationStructureInfo{};
     descriptorAccelerationStructureInfo.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_NV;
     descriptorAccelerationStructureInfo.accelerationStructureCount = 1;
-    descriptorAccelerationStructureInfo.pAccelerationStructures = &perFrameRenderResources[swapchainIndex].tlas.accelerationStructure;
+    descriptorAccelerationStructureInfo.pAccelerationStructures = &perSwapchainImage[swapchainIndex].tlas.accelerationStructure;
 
     VkWriteDescriptorSet accelerationStructureWrite{};
     accelerationStructureWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
@@ -1133,9 +1138,9 @@ void updateModelDescriptorSet(uint32_t swapchainIndex) {
     // sphere ssbo
 
     VkDescriptorBufferInfo spheresDescriptor{};
-    spheresDescriptor.buffer = perFrameRenderResources[swapchainIndex].spheresBuffer.buffer;
+    spheresDescriptor.buffer = perSwapchainImage[swapchainIndex].spheresBuffer.buffer;
     spheresDescriptor.offset = 0;
-    spheresDescriptor.range = perFrameRenderResources[swapchainIndex].spheresBuffer.size;
+    spheresDescriptor.range = perSwapchainImage[swapchainIndex].spheresBuffer.size;
 
     VkWriteDescriptorSet spheresWrite{};
     spheresWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
@@ -1163,7 +1168,7 @@ void recordCommandBufferRender(uint32_t swapchainIndex) {
     beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
     VkImageSubresourceRange subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
 
-    VkCommandBuffer& commandBuffer = commandBuffersRender[swapchainIndex];
+    VkCommandBuffer& commandBuffer = perSwapchainImage[swapchainIndex].commandBufferRender;
     VK_CHECK_RESULT(vkBeginCommandBuffer(commandBuffer, &beginInfo), "failed to begin command buffer");
 
     // ray tracing dispath
@@ -1172,7 +1177,7 @@ void recordCommandBufferRender(uint32_t swapchainIndex) {
 
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_RAY_TRACING_NV, pipeline);
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_RAY_TRACING_NV, pipelineLayout, 0, 1, &descriptorSetRender, 1, &uboDynamicOffset);
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_RAY_TRACING_NV, pipelineLayout, 1, 1, &perFrameRenderResources[swapchainIndex].descriptorSetModels, 0, nullptr);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_RAY_TRACING_NV, pipelineLayout, 1, 1, &perSwapchainImage[swapchainIndex].descriptorSetModels, 0, nullptr);
 
     vkCmdTraceRaysNV(commandBuffer,
         shaderBindingTable.buffer, bindingOffsetRayGenShader,
@@ -1237,12 +1242,12 @@ void cleanUp() {
     vkDestroyDescriptorSetLayout(device, descriptorSetLayoutModels, VK_ALLOCATOR);
     vkDestroyDescriptorSetLayout(device, descriptorSetLayoutRender, VK_ALLOCATOR);
 
-    for (PerFrameRenderResources& resources : perFrameRenderResources) {
-        resources.spheresBuffer.destroy(device);
-        vkDestroyAccelerationStructureNV(device, resources.tlas.accelerationStructure, nullptr);
-        vkFreeMemory(device, resources.tlas.memory, VK_ALLOCATOR);
+    for (int i = 0; i < perSwapchainImage.size(); i++) {
+        perSwapchainImage[i].spheresBuffer.destroy(device);
+        vkDestroyAccelerationStructureNV(device, perSwapchainImage[i].tlas.accelerationStructure, nullptr);
+        vkFreeMemory(device, perSwapchainImage[i].tlas.memory, VK_ALLOCATOR);
     }
-    perFrameRenderResources.clear();
+    perSwapchainImage.clear();
 
     ellipsoidIDs.clear();
     for (Vk::AccelerationStructure& as : ellipsoidBLASs) cleanUpAccelerationStructure(as);
@@ -1264,6 +1269,7 @@ void cleanUp() {
     }
     vkDestroyCommandPool(device, commandPool, VK_ALLOCATOR);
 
+    perSwapchainImage.clear();
     vkDestroyDevice(device, VK_ALLOCATOR);
 
     if (enableValidationLayers)
@@ -1275,10 +1281,10 @@ void cleanUp() {
 
 void cleanupSwapChain() {
     vkDestroySwapchainKHR(device, swapchain.swapchain, VK_ALLOCATOR);
-    vkFreeCommandBuffers(device, commandPool, static_cast<uint32_t>(commandBuffersRender.size()), commandBuffersRender.data());
-    vkFreeCommandBuffers(device, commandPool, static_cast<uint32_t>(commandBuffersImageCopy.size()), commandBuffersImageCopy.data());
-    commandBuffersRender.clear();
-    commandBuffersImageCopy.clear();
+    for (int i = 0; i < perSwapchainImage.size(); i++) {
+        vkFreeCommandBuffers(device, commandPool, 1, &perSwapchainImage[i].commandBufferRender);
+        vkFreeCommandBuffers(device, commandPool, 1, &perSwapchainImage[i].commandBufferImageCopy);
+    }
     vkDestroyDescriptorPool(device, descriptorPoolRender, VK_ALLOCATOR);
     renderImage.destroy(device);
 }
