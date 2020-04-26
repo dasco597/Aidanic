@@ -8,6 +8,7 @@ precision highp float;
 #define MAX_DISTANCE 100.0
 
 #define AMBIENT 0.2
+#define T_MIN_SHADOW 0.0001
 
 // structs
 
@@ -22,7 +23,6 @@ struct RayPayload {
 
 struct ShadowPayload {
     bool in_shadow;
-	uint intersected_primitive_id;
 };
 
 struct Ellipsoid {
