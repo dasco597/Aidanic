@@ -18,11 +18,11 @@
 #define _DEBUG_BREAK
 #endif // _DEBUG
 
-#define _WINDOW_SIZE_X 1200
-#define _WINDOW_SIZE_Y 800
+#define WINDOW_SIZE_X 1200
+#define WINDOW_SIZE_Y 800
 
-#define _MAX_FRAMES_IN_FLIGHT 2
-#define _AID_PI 3.14159f
+#define MAX_FRAMES_IN_FLIGHT 2
+#define AID_PI 3.14159f
 
 // Size of a static C-style array. Don't use on pointers!
 #define ARRAY_SIZE(_ARR) static_cast<uint32_t>(sizeof(_ARR) / sizeof(*_ARR))

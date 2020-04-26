@@ -41,8 +41,6 @@ VkPhysicalDevice physicalDevice;
 VkPhysicalDeviceProperties physicalDeviceProperties{};
 VkMemoryRequirements memoryRequirements{};
 
-int swapchainIndexLastRendered = -1;
-
 struct {
     VkQueue graphics, compute, present;
 } queues;
@@ -56,7 +54,6 @@ struct {
 } swapchain;
 
 VkPhysicalDeviceRayTracingPropertiesNV rayTracingProperties{};
-Vk::StorageImage renderImage;
 Vk::BufferHostVisible shaderBindingTable;
 
 VkPipeline pipeline;
@@ -64,11 +61,34 @@ VkPipelineLayout pipelineLayout;
 
 VkCommandPool commandPool;
 
-VkDescriptorSet descriptorSetRender;
 VkDescriptorPool descriptorPoolRender;
 VkDescriptorSetLayout descriptorSetLayoutRender, descriptorSetLayoutModels;
 
-Vk::BufferHostVisible bufferUBO; // per swapchain image
+struct _PerSwapchainImage {
+    VkCommandBuffer commandBufferImageCopy[MAX_FRAMES_IN_FLIGHT];
+    VkFence renderCompleteFenceReference; // do not allocate
+};
+std::vector<_PerSwapchainImage> perSwapchainImage;
+
+struct _PerFrame {
+    Vk::StorageImage renderImage;
+    VkCommandBuffer commandBufferRender;
+    bool rerecordRenderCommands = false;
+
+    Vk::AccelerationStructure tlas;
+    VkDescriptorSet descriptorSetModels, descriptorSetRender;
+    Vk::BufferDeviceLocal spheresBuffer;
+
+    bool updateEllipsoidTLAS = false;
+    std::vector<Model::EllipsoidID> updateEllipsoidIDs;
+
+    VkSemaphore semaphoreImageAvailable, semaphoreRenderFinished, semaphoreImGuiFinished, semaphoreImageCopyFinished;
+    VkFence fenceRenderComplete;
+};
+_PerFrame perFrame[MAX_FRAMES_IN_FLIGHT];
+size_t currentFrame = 0;
+
+Vk::BufferHostVisible bufferUBO; // per frame
 
 std::vector<Model::EllipsoidID> ellipsoidIDs;
 std::vector<Vk::AccelerationStructure> ellipsoidBLASs; // one ellipsoid per blas
@@ -76,30 +96,11 @@ std::vector<Vk::BLASInstance> ellipsoidInstances;
 
 VkDescriptorPool descriptorPoolModels;
 
-struct _PerSwapchainImage {
-    VkCommandBuffer commandBufferRender;
-    VkCommandBuffer commandBufferImageCopy;
-    VkFence renderComplete;
-    bool rerecordRenderCommands = false;
-
-    Vk::AccelerationStructure tlas;
-    VkDescriptorSet descriptorSetModels;
-    Vk::BufferDeviceLocal spheresBuffer;
-
-    bool updateEllipsoidTLAS = false;
-    std::vector<Model::EllipsoidID> updateEllipsoidIDs;
-};
-std::vector<_PerSwapchainImage> perSwapchainImage;
-
 struct UniformData {
     glm::mat4 viewInverse = glm::mat4(1.0f);
     glm::mat4 projInverse = glm::mat4(1.0f);
     glm::vec4 cameraPos = glm::vec4(0.0f);
 };
-
-std::vector<VkSemaphore> semaphoresImageAvailable, semaphoresRenderFinished, semaphoresImGuiFinished, semaphoresImageCopyFinished;
-std::vector<VkFence> inFlightFences;
-size_t currentFrame = 0;
 
 const char* validationLayers[1] = {
     "VK_LAYER_KHRONOS_validation"
@@ -134,9 +135,7 @@ enum {
     GROUP_COUNT
 };
 
-
 // rtx function pointers
-
 PFN_vkCreateAccelerationStructureNV vkCreateAccelerationStructureNV;
 PFN_vkDestroyAccelerationStructureNV vkDestroyAccelerationStructureNV;
 PFN_vkBindAccelerationStructureMemoryNV vkBindAccelerationStructureMemoryNV;
@@ -163,27 +162,27 @@ void createSwapChain();
 void createCommandPool();
 void createSyncObjects();
 
-void createRenderImage();
+void createRenderImages();
 void initPerFrameRenderResources();
 void createUBO(glm::mat4 viewInverse, glm::mat4 projInverse, glm::vec3 cameraPos);
 
 void createDescriptorSetLayouts();
 void createRayTracingPipeline();
 void createShaderBindingTable();
-void createDescriptorSetRender();
+void createDescriptorSetsRender();
 
 void createCommandBuffersRender();
 void createCommandBuffersImageCopy();
 
 // main loop
 
-void updateModels(uint32_t swapchainIndex);
-void updateModelTLAS(uint32_t swapchainIndex);
-void updateEllipsoidBuffer(uint32_t swapchainIndex);
-void updateModelDescriptorSet(uint32_t swapchainIndex);
-void recordCommandBufferRender(uint32_t swapchainIndex);
+void updateModels(uint32_t frame);
+void updateModelTLAS(uint32_t frame);
+void updateEllipsoidBuffer(uint32_t frame);
+void updateModelDescriptorSet(uint32_t frame);
+void recordCommandBufferRender(uint32_t frame);
 
-void updateUniformBuffer(glm::mat4 viewInverse, glm::mat4 projInverse, glm::vec3 cameraPos, uint32_t swapchainIndex);
+void updateUniformBuffer(glm::mat4 viewInverse, glm::mat4 projInverse, glm::vec3 cameraPos, uint32_t frame);
 
 void recreateSwapChain();
 static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity, VkDebugUtilsMessageTypeFlagsEXT messageType, const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData, void* pUserData);
@@ -228,7 +227,7 @@ VkQueue getGraphicsQueue() { return queues.graphics; }
 VkSurfaceKHR getSurface() { return surface; }
 VkCommandPool getCommandPool() { return commandPool; }
 uint32_t getNumSwapchainImages() { return swapchain.numImages; }
-Vk::StorageImage getRenderImage() { return renderImage; }
+Vk::StorageImage getRenderImage(uint32_t frame) { return perFrame[frame].renderImage; }
 
 void init(std::vector<const char*>& requiredExtensions, glm::mat4 viewInverse, glm::mat4 projInverse, glm::vec3 cameraPos) {
     AID_INFO("Initializing vulkan renderer...");
@@ -243,14 +242,14 @@ void init(std::vector<const char*>& requiredExtensions, glm::mat4 viewInverse, g
     createCommandPool();
     createSyncObjects();
 
-    createRenderImage();
+    createRenderImages();
     createDescriptorSetLayouts();
     initPerFrameRenderResources();
     createUBO(viewInverse, projInverse, cameraPos);
 
     createRayTracingPipeline();
     createShaderBindingTable();
-    createDescriptorSetRender();
+    createDescriptorSetsRender();
 
     createCommandBuffersRender();
     createCommandBuffersImageCopy();
@@ -468,13 +467,6 @@ void createCommandPool() {
 }
 
 void createSyncObjects() {
-    semaphoresImageAvailable.resize(_MAX_FRAMES_IN_FLIGHT);
-    semaphoresRenderFinished.resize(_MAX_FRAMES_IN_FLIGHT);
-    semaphoresImGuiFinished.resize(_MAX_FRAMES_IN_FLIGHT);
-    semaphoresImageCopyFinished.resize(_MAX_FRAMES_IN_FLIGHT);
-
-    inFlightFences.resize(_MAX_FRAMES_IN_FLIGHT);
-
     VkSemaphoreCreateInfo semaphoreInfo = {};
     semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
 
@@ -482,27 +474,22 @@ void createSyncObjects() {
     fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
     fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
 
-    for (size_t i = 0; i < _MAX_FRAMES_IN_FLIGHT; i++) {
-        if (vkCreateSemaphore(device, &semaphoreInfo, nullptr, &semaphoresImageAvailable[i]) != VK_SUCCESS ||
-            vkCreateSemaphore(device, &semaphoreInfo, nullptr, &semaphoresRenderFinished[i]) != VK_SUCCESS ||
-            vkCreateSemaphore(device, &semaphoreInfo, nullptr, &semaphoresImGuiFinished[i]) != VK_SUCCESS ||
-            vkCreateSemaphore(device, &semaphoreInfo, nullptr, &semaphoresImageCopyFinished[i]) != VK_SUCCESS ||
-            vkCreateFence(device, &fenceInfo, nullptr, &inFlightFences[i]) != VK_SUCCESS) {
+    for (size_t f = 0; f < MAX_FRAMES_IN_FLIGHT; f++) {
+        if (vkCreateSemaphore(device, &semaphoreInfo, nullptr, &perFrame[f].semaphoreImageAvailable) != VK_SUCCESS ||
+            vkCreateSemaphore(device, &semaphoreInfo, nullptr, &perFrame[f].semaphoreRenderFinished) != VK_SUCCESS ||
+            vkCreateSemaphore(device, &semaphoreInfo, nullptr, &perFrame[f].semaphoreImGuiFinished) != VK_SUCCESS ||
+            vkCreateSemaphore(device, &semaphoreInfo, nullptr, &perFrame[f].semaphoreImageCopyFinished) != VK_SUCCESS ||
+            vkCreateFence(device, &fenceInfo, nullptr, &perFrame[f].fenceRenderComplete) != VK_SUCCESS) {
             throw std::runtime_error("failed to create synchronization objects for a frame!");
         }
     }
 }
 
-void createRenderImage() {
-    renderImage.extent = swapchain.extent;
-    renderImage.format = swapchain.format;
+void createRenderImages() {
 
     VkImageCreateInfo imageCI = {};
     imageCI.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
     imageCI.imageType = VK_IMAGE_TYPE_2D;
-    imageCI.format = renderImage.format;
-    imageCI.extent.width = renderImage.extent.width;
-    imageCI.extent.height = renderImage.extent.height;
     imageCI.extent.depth = 1;
     imageCI.mipLevels = 1;
     imageCI.arrayLayers = 1;
@@ -510,33 +497,46 @@ void createRenderImage() {
     imageCI.tiling = VK_IMAGE_TILING_OPTIMAL;
     imageCI.usage = VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
     imageCI.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    VK_CHECK_RESULT(vkCreateImage(device, &imageCI, VK_ALLOCATOR, &renderImage.image), "failed to create ray tracing storage image");
 
-    VkMemoryRequirements memReqs;
-    vkGetImageMemoryRequirements(device, renderImage.image, &memReqs);
-    VkMemoryAllocateInfo memoryAllocateInfo{};
-    memoryAllocateInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-    memoryAllocateInfo.allocationSize = memReqs.size;
-    memoryAllocateInfo.memoryTypeIndex = Vk::findMemoryType(physicalDevice, memReqs.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-    VK_CHECK_RESULT(vkAllocateMemory(device, &memoryAllocateInfo, nullptr, &renderImage.memory), "failed to allocate render image memory");
-    VK_CHECK_RESULT(vkBindImageMemory(device, renderImage.image, renderImage.memory, 0), "failed to bind image memory");
 
     VkImageViewCreateInfo colorImageView{};
     colorImageView.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
     colorImageView.viewType = VK_IMAGE_VIEW_TYPE_2D;
-    colorImageView.format = renderImage.format;
     colorImageView.subresourceRange = {};
     colorImageView.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
     colorImageView.subresourceRange.baseMipLevel = 0;
     colorImageView.subresourceRange.levelCount = 1;
     colorImageView.subresourceRange.baseArrayLayer = 0;
     colorImageView.subresourceRange.layerCount = 1;
-    colorImageView.image = renderImage.image;
-    VK_CHECK_RESULT(vkCreateImageView(device, &colorImageView, nullptr, &renderImage.view), "failed to create render image view");
 
-    VkCommandBuffer cmdBuffer = Vk::beginSingleTimeCommands(device, commandPool);
-    recordImageLayoutTransition(cmdBuffer, renderImage.image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL, { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 });
-    Vk::endSingleTimeCommands(device, cmdBuffer, queues.graphics, commandPool);
+    for (int f = 0; f < MAX_FRAMES_IN_FLIGHT; f++) {
+        perFrame[f].renderImage.extent = swapchain.extent;
+        perFrame[f].renderImage.format = swapchain.format;
+
+        imageCI.format = perFrame[f].renderImage.format;
+        imageCI.extent.width = perFrame[f].renderImage.extent.width;
+        imageCI.extent.height = perFrame[f].renderImage.extent.height;
+
+        VK_CHECK_RESULT(vkCreateImage(device, &imageCI, VK_ALLOCATOR, &perFrame[f].renderImage.image), "failed to create ray tracing storage image");
+
+        VkMemoryRequirements memReqs;
+        vkGetImageMemoryRequirements(device, perFrame[f].renderImage.image, &memReqs);
+        VkMemoryAllocateInfo memoryAllocateInfo{};
+        memoryAllocateInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+        memoryAllocateInfo.allocationSize = memReqs.size;
+        memoryAllocateInfo.memoryTypeIndex = Vk::findMemoryType(physicalDevice, memReqs.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+
+        VK_CHECK_RESULT(vkAllocateMemory(device, &memoryAllocateInfo, nullptr, &perFrame[f].renderImage.memory), "failed to allocate render image memory");
+        VK_CHECK_RESULT(vkBindImageMemory(device, perFrame[f].renderImage.image, perFrame[f].renderImage.memory, 0), "failed to bind image memory");
+
+        colorImageView.format = perFrame[f].renderImage.format;
+        colorImageView.image = perFrame[f].renderImage.image;
+        VK_CHECK_RESULT(vkCreateImageView(device, &colorImageView, nullptr, &perFrame[f].renderImage.view), "failed to create render image view");
+
+        VkCommandBuffer cmdBuffer = Vk::beginSingleTimeCommands(device, commandPool);
+        recordImageLayoutTransition(cmdBuffer, perFrame[f].renderImage.image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL, { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 });
+        Vk::endSingleTimeCommands(device, cmdBuffer, queues.graphics, commandPool);
+    }
 }
 
 void initPerFrameRenderResources() {
@@ -555,14 +555,14 @@ void initPerFrameRenderResources() {
     descriptorPoolCI.maxSets = static_cast<uint32_t>(perSwapchainImage.size());
     VK_CHECK_RESULT(vkCreateDescriptorPool(device, &descriptorPoolCI, VK_ALLOCATOR, &descriptorPoolModels), "failed to create descriptor pool");
 
-    for (int i = 0; i < perSwapchainImage.size(); i++) {
+    for (int f = 0; f < MAX_FRAMES_IN_FLIGHT; f++) {
         // create tlas
 
-        updateModelTLAS(i);
+        updateModelTLAS(f);
 
         // init ellipsoids buffer
 
-        perSwapchainImage[i].spheresBuffer.create(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, sizeof(Model::Ellipsoid) * SPHERE_COUNT_PER_TLAS, device, physicalDevice);
+        perFrame[f].spheresBuffer.create(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, sizeof(Model::Ellipsoid) * SPHERE_COUNT_PER_TLAS, device, physicalDevice);
 
         // create descriptor set
 
@@ -571,16 +571,16 @@ void initPerFrameRenderResources() {
         descriptorSetAllocateInfo.descriptorPool = descriptorPoolModels;
         descriptorSetAllocateInfo.descriptorSetCount = 1;
         descriptorSetAllocateInfo.pSetLayouts = &descriptorSetLayoutModels;
-        vkAllocateDescriptorSets(device, &descriptorSetAllocateInfo, &perSwapchainImage[i].descriptorSetModels);
+        vkAllocateDescriptorSets(device, &descriptorSetAllocateInfo, &perFrame[f].descriptorSetModels);
         
-        updateModelDescriptorSet(i);
+        updateModelDescriptorSet(f);
     }
 }
 
 void createUBO(glm::mat4 viewInverse, glm::mat4 projInverse, glm::vec3 cameraPos) {
     bufferUBO.dynamicStride = getUBOOffsetAligned(sizeof(UniformData));
-    bufferUBO.create(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, static_cast<VkDeviceSize>(swapchain.numImages) * bufferUBO.dynamicStride, device, physicalDevice);
-    for (int s = 0; s < swapchain.numImages; s++) updateUniformBuffer(viewInverse, projInverse, cameraPos, s);
+    bufferUBO.create(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, static_cast<VkDeviceSize>(MAX_FRAMES_IN_FLIGHT) * bufferUBO.dynamicStride, device, physicalDevice);
+    for (int s = 0; s < MAX_FRAMES_IN_FLIGHT; s++) updateUniformBuffer(viewInverse, projInverse, cameraPos, s);
 }
 
 void createDescriptorSetLayouts() {
@@ -706,17 +706,17 @@ void createShaderBindingTable() {
     shaderBindingTable.upload(shaderGroupHandleStorage, sbtSize, 0, device);
 }
 
-void createDescriptorSetRender() {
+void createDescriptorSetsRender() {
     std::vector<VkDescriptorPoolSize> poolSizes = {
-        { VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1 },
-        { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, 1 }
+        { VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, MAX_FRAMES_IN_FLIGHT },
+        { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, MAX_FRAMES_IN_FLIGHT }
     };
 
     VkDescriptorPoolCreateInfo descriptorPoolCI{};
     descriptorPoolCI.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
     descriptorPoolCI.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
     descriptorPoolCI.pPoolSizes = poolSizes.data();
-    descriptorPoolCI.maxSets = 1;
+    descriptorPoolCI.maxSets = MAX_FRAMES_IN_FLIGHT;
     VK_CHECK_RESULT(vkCreateDescriptorPool(device, &descriptorPoolCI, VK_ALLOCATOR, &descriptorPoolRender), "failed to create descriptor pool");
 
     VkDescriptorSetAllocateInfo descriptorSetAllocateInfo{};
@@ -724,20 +724,15 @@ void createDescriptorSetRender() {
     descriptorSetAllocateInfo.descriptorPool = descriptorPoolRender;
     descriptorSetAllocateInfo.descriptorSetCount = 1;
     descriptorSetAllocateInfo.pSetLayouts = &descriptorSetLayoutRender;
-    vkAllocateDescriptorSets(device, &descriptorSetAllocateInfo, &descriptorSetRender);
 
     // render image descriptor
 
-    VkDescriptorImageInfo renderImageDescriptor{};
-    renderImageDescriptor.imageView = renderImage.view;
-    renderImageDescriptor.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+    VkDescriptorImageInfo renderImageDescriptor[MAX_FRAMES_IN_FLIGHT];
 
     VkWriteDescriptorSet renderImageWrite{};
     renderImageWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    renderImageWrite.dstSet = descriptorSetRender;
     renderImageWrite.descriptorCount = 1;
     renderImageWrite.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-    renderImageWrite.pImageInfo = &renderImageDescriptor;
     renderImageWrite.dstBinding = 0;
 
     // ubo descriptor
@@ -749,16 +744,27 @@ void createDescriptorSetRender() {
 
     VkWriteDescriptorSet uniformBufferWrite{};
     uniformBufferWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    uniformBufferWrite.dstSet = descriptorSetRender;
     uniformBufferWrite.descriptorCount = 1;
     uniformBufferWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
     uniformBufferWrite.pBufferInfo = &uboDescriptor;
     uniformBufferWrite.dstBinding = 1;
 
-    std::vector<VkWriteDescriptorSet> writeDescriptorSets = {
-        renderImageWrite,
-        uniformBufferWrite
-    };
+    std::vector<VkWriteDescriptorSet> writeDescriptorSets;
+    for (int f = 0; f < MAX_FRAMES_IN_FLIGHT; f++) {
+        VK_CHECK_RESULT(vkAllocateDescriptorSets(device, &descriptorSetAllocateInfo, &perFrame[f].descriptorSetRender), "failed to allocate render descriptor set");
+
+        renderImageDescriptor[f] = {};
+        renderImageDescriptor[f].imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+        renderImageDescriptor[f].imageView = perFrame[f].renderImage.view;
+
+        renderImageWrite.pImageInfo = &renderImageDescriptor[f];
+        renderImageWrite.dstSet = perFrame[f].descriptorSetRender;
+        writeDescriptorSets.push_back(renderImageWrite);
+
+        uniformBufferWrite.dstSet = perFrame[f].descriptorSetRender;
+        writeDescriptorSets.push_back(uniformBufferWrite);
+    }
+
     vkUpdateDescriptorSets(device, static_cast<uint32_t>(writeDescriptorSets.size()), writeDescriptorSets.data(), 0, VK_NULL_HANDLE);
 }
 
@@ -769,109 +775,111 @@ void createCommandBuffersRender() {
     allocInfo.commandPool = commandPool;
     allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
 
-    for (int i = 0; i < perSwapchainImage.size(); i++) {
-        vkAllocateCommandBuffers(device, &allocInfo, &perSwapchainImage[i].commandBufferRender);
-        recordCommandBufferRender(i);
+    for (int f = 0; f < MAX_FRAMES_IN_FLIGHT; f++) {
+        vkAllocateCommandBuffers(device, &allocInfo, &perFrame[f].commandBufferRender);
+        recordCommandBufferRender(f);
     }
 }
 
 void createCommandBuffersImageCopy() {
     VkCommandBufferAllocateInfo allocInfo{};
     allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-    allocInfo.commandBufferCount = 1;
+    allocInfo.commandBufferCount = MAX_FRAMES_IN_FLIGHT;
     allocInfo.commandPool = commandPool;
     allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-    for (int i = 0; i < perSwapchainImage.size(); i++)
-        vkAllocateCommandBuffers(device, &allocInfo, &perSwapchainImage[i].commandBufferImageCopy);
+    for (int s = 0; s < perSwapchainImage.size(); s++)
+        vkAllocateCommandBuffers(device, &allocInfo, perSwapchainImage[s].commandBufferImageCopy);
 
     // begin info
     VkCommandBufferBeginInfo beginInfo{};
     beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
     VkImageSubresourceRange subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
 
-    for (int i = 0; i < perSwapchainImage.size(); i++) {
-        VkCommandBuffer& commandBuffer = perSwapchainImage[i].commandBufferImageCopy;
-        VK_CHECK_RESULT(vkBeginCommandBuffer(commandBuffer, &beginInfo), "failed to begin command buffer");
+    for (int s = 0; s < swapchain.numImages; s++) {
+        for (int f = 0; f < MAX_FRAMES_IN_FLIGHT; f++) {
+            VkCommandBuffer& commandBuffer = perSwapchainImage[s].commandBufferImageCopy[f];
+            VK_CHECK_RESULT(vkBeginCommandBuffer(commandBuffer, &beginInfo), "failed to begin command buffer");
 
-        // copy ray tracing output to swapchain image
+            // copy ray tracing output to swapchain image
 
-        recordImageLayoutTransition(
-            commandBuffer,
-            swapchain.images[i],
-            VK_IMAGE_LAYOUT_UNDEFINED,
-            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-            subresourceRange);
+            recordImageLayoutTransition(
+                commandBuffer,
+                swapchain.images[s],
+                VK_IMAGE_LAYOUT_UNDEFINED,
+                VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                subresourceRange);
 
-        recordImageLayoutTransition(
-            commandBuffer,
-            renderImage.image,
-            VK_IMAGE_LAYOUT_GENERAL,
-            VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-            subresourceRange);
+            recordImageLayoutTransition(
+                commandBuffer,
+                perFrame[f].renderImage.image,
+                VK_IMAGE_LAYOUT_GENERAL,
+                VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                subresourceRange);
 
-        VkImageCopy copyRegion{};
-        copyRegion.srcSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 };
-        copyRegion.srcOffset = { 0, 0, 0 };
-        copyRegion.dstSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 };
-        copyRegion.dstOffset = { 0, 0, 0 };
-        copyRegion.extent = { swapchain.extent.width, swapchain.extent.height, 1 };
-        vkCmdCopyImage(commandBuffer, renderImage.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, swapchain.images[i], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copyRegion);
+            VkImageCopy copyRegion{};
+            copyRegion.srcSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 };
+            copyRegion.srcOffset = { 0, 0, 0 };
+            copyRegion.dstSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 };
+            copyRegion.dstOffset = { 0, 0, 0 };
+            copyRegion.extent = { swapchain.extent.width, swapchain.extent.height, 1 };
+            vkCmdCopyImage(commandBuffer, perFrame[f].renderImage.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, swapchain.images[s], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copyRegion);
 
-        recordImageLayoutTransition(
-            commandBuffer,
-            swapchain.images[i],
-            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-            VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
-            subresourceRange);
+            recordImageLayoutTransition(
+                commandBuffer,
+                swapchain.images[s],
+                VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+                subresourceRange);
 
-        recordImageLayoutTransition(
-            commandBuffer,
-            renderImage.image,
-            VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-            VK_IMAGE_LAYOUT_GENERAL,
-            subresourceRange);
+            recordImageLayoutTransition(
+                commandBuffer,
+                perFrame[f].renderImage.image,
+                VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                VK_IMAGE_LAYOUT_GENERAL,
+                subresourceRange);
 
-        VK_CHECK_RESULT(vkEndCommandBuffer(commandBuffer), "failed to end rendering command buffer {}", i);
+            VK_CHECK_RESULT(vkEndCommandBuffer(commandBuffer), "failed to end rendering command buffer {}", s);
+        }
     }
 }
 
 // MAIN LOOP
 
 void drawFrame(bool framebufferResized, glm::mat4 viewInverse, glm::mat4 projInverse, glm::vec3 cameraPos, bool renderImGui) {
-    vkWaitForFences(device, 1, &inFlightFences[currentFrame], VK_TRUE, DEFAULT_FENCE_TIMEOUT);
+    vkWaitForFences(device, 1, &perFrame[currentFrame].fenceRenderComplete, VK_TRUE, DEFAULT_FENCE_TIMEOUT);
 
     uint32_t imageIndex;
-    VkResult resultAcquire = vkAcquireNextImageKHR(device, swapchain.swapchain, UINT64_MAX, semaphoresImageAvailable[currentFrame], VK_NULL_HANDLE, &imageIndex);
+    VkResult resultAcquire = vkAcquireNextImageKHR(device, swapchain.swapchain, UINT64_MAX, perFrame[currentFrame].semaphoreImageAvailable, VK_NULL_HANDLE, &imageIndex);
 
     // TODO framebufferResized? debug and check result values
     if (resultAcquire == VK_ERROR_OUT_OF_DATE_KHR) {
         recreateSwapChain();
-        ImGuiVk::recreateFramebuffer();
+        ImGuiVk::recreateFramebuffer(currentFrame);
         return;
     } else if (resultAcquire != VK_SUCCESS && resultAcquire != VK_SUBOPTIMAL_KHR) {
         AID_ERROR("failed to acquire swap chain image!");
     }
 
-    updateModels(imageIndex);
-    if (perSwapchainImage[imageIndex].rerecordRenderCommands) {
-        recordCommandBufferRender(imageIndex);
-        perSwapchainImage[imageIndex].rerecordRenderCommands = false;
+    updateModels(currentFrame);
+    if (perFrame[currentFrame].rerecordRenderCommands) {
+        recordCommandBufferRender(currentFrame);
+        perFrame[currentFrame].rerecordRenderCommands = false;
     }
-    updateUniformBuffer(viewInverse, projInverse, cameraPos, imageIndex);
+    updateUniformBuffer(viewInverse, projInverse, cameraPos, currentFrame);
 
-    if (perSwapchainImage[imageIndex].renderComplete != VK_NULL_HANDLE) {
-        vkWaitForFences(device, 1, &perSwapchainImage[imageIndex].renderComplete, VK_TRUE, DEFAULT_FENCE_TIMEOUT);
+    if (perSwapchainImage[imageIndex].renderCompleteFenceReference != VK_NULL_HANDLE) {
+        vkWaitForFences(device, 1, &perSwapchainImage[imageIndex].renderCompleteFenceReference, VK_TRUE, DEFAULT_FENCE_TIMEOUT);
     }
-    perSwapchainImage[imageIndex].renderComplete = inFlightFences[currentFrame];
+    perSwapchainImage[imageIndex].renderCompleteFenceReference = perFrame[currentFrame].fenceRenderComplete;
 
     // ray tracing dispatch
     {
-        VkSemaphore signalSemaphores[] = { semaphoresRenderFinished[currentFrame] };
+        VkSemaphore signalSemaphores[] = { perFrame[currentFrame].semaphoreRenderFinished };
 
         VkSubmitInfo submitInfo{};
         submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
         submitInfo.commandBufferCount = 1;
-        submitInfo.pCommandBuffers = &perSwapchainImage[imageIndex].commandBufferRender;
+        submitInfo.pCommandBuffers = &perFrame[currentFrame].commandBufferRender;
         submitInfo.waitSemaphoreCount = 0;
         submitInfo.signalSemaphoreCount = 1;
         submitInfo.pSignalSemaphores = signalSemaphores;
@@ -880,15 +888,15 @@ void drawFrame(bool framebufferResized, glm::mat4 viewInverse, glm::mat4 projInv
     }
 
     // render imGui
-    if (renderImGui) ImGuiVk::recordRenderCommands(imageIndex);
-    renderImGui &= ImGuiVk::shouldRender(imageIndex);
+    if (renderImGui) ImGuiVk::recordRenderCommands(currentFrame);
+    renderImGui &= ImGuiVk::shouldRender(currentFrame);
     if (renderImGui) {
 
-        VkSemaphore waitSemaphores[] = { semaphoresRenderFinished[currentFrame] };
+        VkSemaphore waitSemaphores[] = { perFrame[currentFrame].semaphoreRenderFinished };
         VkPipelineStageFlags waitStages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
-        VkSemaphore signalSemaphores[] = { semaphoresImGuiFinished[currentFrame] };
+        VkSemaphore signalSemaphores[] = { perFrame[currentFrame].semaphoreImGuiFinished };
 
-        VkCommandBuffer commandBuffers[] = { ImGuiVk::getCommandBuffer(imageIndex) };
+        VkCommandBuffer commandBuffers[] = { ImGuiVk::getCommandBuffer(currentFrame) };
 
         VkSubmitInfo submitInfo{};
         submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
@@ -905,30 +913,30 @@ void drawFrame(bool framebufferResized, glm::mat4 viewInverse, glm::mat4 projInv
 
     // copy render image to swapchain image
     {
-        VkSemaphore signalSemaphores[] = { semaphoresImageCopyFinished[currentFrame] };
+        VkSemaphore signalSemaphores[] = { perFrame[currentFrame].semaphoreImageCopyFinished };
         VkSemaphore waitSemaphores[2];
-        waitSemaphores[0] = semaphoresImageAvailable[currentFrame];
-        if (renderImGui) waitSemaphores[1] = semaphoresImGuiFinished[currentFrame];
-        else waitSemaphores[1] = semaphoresRenderFinished[currentFrame];
+        waitSemaphores[0] = perFrame[currentFrame].semaphoreImageAvailable;
+        if (renderImGui) waitSemaphores[1] = perFrame[currentFrame].semaphoreImGuiFinished;
+        else waitSemaphores[1] = perFrame[currentFrame].semaphoreRenderFinished;
         VkPipelineStageFlags waitStages[] = { VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT };
 
         VkSubmitInfo submitInfo{};
         submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
         submitInfo.commandBufferCount = 1;
-        submitInfo.pCommandBuffers = &perSwapchainImage[imageIndex].commandBufferImageCopy;
+        submitInfo.pCommandBuffers = &perSwapchainImage[imageIndex].commandBufferImageCopy[currentFrame];
         submitInfo.waitSemaphoreCount = 2;
         submitInfo.pWaitSemaphores = waitSemaphores;
         submitInfo.pWaitDstStageMask = waitStages;
         submitInfo.signalSemaphoreCount = 1;
         submitInfo.pSignalSemaphores = signalSemaphores;
 
-        vkResetFences(device, 1, &inFlightFences[currentFrame]);
-        VK_CHECK_RESULT(vkQueueSubmit(queues.graphics, 1, &submitInfo, inFlightFences[currentFrame]), "failed to submit render queue {}", imageIndex);
+        vkResetFences(device, 1, &perFrame[currentFrame].fenceRenderComplete);
+        VK_CHECK_RESULT(vkQueueSubmit(queues.graphics, 1, &submitInfo, perFrame[currentFrame].fenceRenderComplete), "failed to submit render queue {}", imageIndex);
     }
 
     // present
     {
-        VkSemaphore waitSemaphores[] = { semaphoresImageCopyFinished[currentFrame] };
+        VkSemaphore waitSemaphores[] = { perFrame[currentFrame].semaphoreImageCopyFinished };
 
         VkSwapchainKHR swapchains[] = { swapchain.swapchain };
         VkPresentInfoKHR presentInfo = {};
@@ -943,14 +951,13 @@ void drawFrame(bool framebufferResized, glm::mat4 viewInverse, glm::mat4 projInv
 
         if (resultPresent == VK_ERROR_OUT_OF_DATE_KHR || resultPresent == VK_SUBOPTIMAL_KHR || framebufferResized) {
             recreateSwapChain();
-            ImGuiVk::recreateFramebuffer();
+            ImGuiVk::recreateFramebuffer(currentFrame);
         } else if (resultPresent != VK_SUCCESS) {
             AID_ERROR("failed to present swap chain image!");
         }
     }
 
-    swapchainIndexLastRendered = imageIndex;
-    currentFrame = (currentFrame + 1) % _MAX_FRAMES_IN_FLIGHT;
+    currentFrame = (currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
 }
 
 int addEllipsoid(Model::EllipsoidID ellipsoidID) {
@@ -972,9 +979,9 @@ int addEllipsoid(Model::EllipsoidID ellipsoidID) {
 
     // signal that a tlas update is required
 
-    for (int i = 0; i < perSwapchainImage.size(); i++) {
-        perSwapchainImage[i].updateEllipsoidTLAS = true;
-        perSwapchainImage[i].updateEllipsoidIDs.push_back(ellipsoidID);
+    for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+        perFrame[i].updateEllipsoidTLAS = true;
+        perFrame[i].updateEllipsoidIDs.push_back(ellipsoidID);
     }
     return 0;
 }
@@ -1000,9 +1007,9 @@ int updateEllipsoid(Model::EllipsoidID ellipsoidID) {
 
     // signal that a tlas update is required
 
-    for (int i = 0; i < perSwapchainImage.size(); i++) {
-        perSwapchainImage[i].updateEllipsoidTLAS = true;
-        perSwapchainImage[i].updateEllipsoidIDs.push_back(ellipsoidID);
+    for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+        perFrame[i].updateEllipsoidTLAS = true;
+        perFrame[i].updateEllipsoidIDs.push_back(ellipsoidID);
     }
     return 0;
 }
@@ -1021,31 +1028,31 @@ int removeEllipsoid(Model::EllipsoidID ellipsoidID) {
     ellipsoidInstances.erase(ellipsoidInstances.begin() + ellipsoidIndex);
     ellipsoidIDs.erase(ellipsoidIDs.begin() + ellipsoidIndex);
 
-    for (int i = 0; i < perSwapchainImage.size(); i++) {
-        perSwapchainImage[i].updateEllipsoidTLAS = true;
+    for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+        perFrame[i].updateEllipsoidTLAS = true;
         for (int i = ellipsoidIndex; i < ellipsoidIDs.size(); i++)
-            perSwapchainImage[i].updateEllipsoidIDs.push_back(ellipsoidIDs[i]);
+            perFrame[i].updateEllipsoidIDs.push_back(ellipsoidIDs[i]);
     }
     return 0;
 }
 
-void updateModels(uint32_t swapchainIndex) {
-    updateEllipsoidBuffer(swapchainIndex);
+void updateModels(uint32_t frame) {
+    updateEllipsoidBuffer(frame);
 
-    if (!perSwapchainImage[swapchainIndex].updateEllipsoidTLAS) return;
+    if (!perFrame[frame].updateEllipsoidTLAS) return;
 
-    vkFreeMemory(device, perSwapchainImage[swapchainIndex].tlas.memory, VK_ALLOCATOR);
-    vkDestroyAccelerationStructureNV(device, perSwapchainImage[swapchainIndex].tlas.accelerationStructure, nullptr);
-    updateModelTLAS(swapchainIndex);
+    vkFreeMemory(device, perFrame[frame].tlas.memory, VK_ALLOCATOR);
+    vkDestroyAccelerationStructureNV(device, perFrame[frame].tlas.accelerationStructure, nullptr);
+    updateModelTLAS(frame);
 
-    updateModelDescriptorSet(swapchainIndex);
-    perSwapchainImage[swapchainIndex].rerecordRenderCommands = true;
+    updateModelDescriptorSet(frame);
+    perFrame[frame].rerecordRenderCommands = true;
 
-    perSwapchainImage[swapchainIndex].updateEllipsoidTLAS = false;
+    perFrame[frame].updateEllipsoidTLAS = false;
 }
 
-void updateModelTLAS(uint32_t swapchainIndex) {
-    Vk::AccelerationStructure& tlas = perSwapchainImage[swapchainIndex].tlas;
+void updateModelTLAS(uint32_t frame) {
+    Vk::AccelerationStructure& tlas = perFrame[frame].tlas;
 
     Vk::BufferHostVisible instanceBuffer;
 
@@ -1099,8 +1106,8 @@ void updateModelTLAS(uint32_t swapchainIndex) {
     scratchBuffer.destroy(device);
 }
 
-void updateEllipsoidBuffer(uint32_t swapchainIndex) {
-    for (Model::EllipsoidID ellipsoidID : perSwapchainImage[swapchainIndex].updateEllipsoidIDs) {
+void updateEllipsoidBuffer(uint32_t frame) {
+    for (Model::EllipsoidID ellipsoidID : perFrame[frame].updateEllipsoidIDs) {
 
         int ellipsoidIndex = Model::containsID(ellipsoidIDs, ellipsoidID);
         if (ellipsoidIndex == -1) {
@@ -1109,22 +1116,22 @@ void updateEllipsoidBuffer(uint32_t swapchainIndex) {
 
         Model::Ellipsoid ellipsoid = PrimitiveManager::getEllipsoid(ellipsoidIDs[ellipsoidIndex]);
 
-        perSwapchainImage[swapchainIndex].spheresBuffer.upload(&ellipsoid, sizeof(Model::Ellipsoid), sizeof(Model::Ellipsoid) * ellipsoidIndex,
+        perFrame[frame].spheresBuffer.upload(&ellipsoid, sizeof(Model::Ellipsoid), sizeof(Model::Ellipsoid) * ellipsoidIndex,
             device, physicalDevice, queues.graphics, commandPool);
     }
 
-    perSwapchainImage[swapchainIndex].updateEllipsoidIDs.clear();
+    perFrame[frame].updateEllipsoidIDs.clear();
 }
 
-void updateModelDescriptorSet(uint32_t swapchainIndex) {
-    VkDescriptorSet& descriptorSet = perSwapchainImage[swapchainIndex].descriptorSetModels;
+void updateModelDescriptorSet(uint32_t frame) {
+    VkDescriptorSet& descriptorSet = perFrame[frame].descriptorSetModels;
 
     // acceleration structure descriptor
 
     VkWriteDescriptorSetAccelerationStructureNV descriptorAccelerationStructureInfo{};
     descriptorAccelerationStructureInfo.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_NV;
     descriptorAccelerationStructureInfo.accelerationStructureCount = 1;
-    descriptorAccelerationStructureInfo.pAccelerationStructures = &perSwapchainImage[swapchainIndex].tlas.accelerationStructure;
+    descriptorAccelerationStructureInfo.pAccelerationStructures = &perFrame[frame].tlas.accelerationStructure;
 
     VkWriteDescriptorSet accelerationStructureWrite{};
     accelerationStructureWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
@@ -1138,9 +1145,9 @@ void updateModelDescriptorSet(uint32_t swapchainIndex) {
     // sphere ssbo
 
     VkDescriptorBufferInfo spheresDescriptor{};
-    spheresDescriptor.buffer = perSwapchainImage[swapchainIndex].spheresBuffer.buffer;
+    spheresDescriptor.buffer = perFrame[frame].spheresBuffer.buffer;
     spheresDescriptor.offset = 0;
-    spheresDescriptor.range = perSwapchainImage[swapchainIndex].spheresBuffer.size;
+    spheresDescriptor.range = perFrame[frame].spheresBuffer.size;
 
     VkWriteDescriptorSet spheresWrite{};
     spheresWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
@@ -1157,7 +1164,7 @@ void updateModelDescriptorSet(uint32_t swapchainIndex) {
     vkUpdateDescriptorSets(device, static_cast<uint32_t>(writeDescriptorSets.size()), writeDescriptorSets.data(), 0, VK_NULL_HANDLE);
 }
 
-void recordCommandBufferRender(uint32_t swapchainIndex) {
+void recordCommandBufferRender(uint32_t frame) {
     // shader binding offsets
     VkDeviceSize bindingOffsetRayGenShader = static_cast<VkDeviceSize>(rayTracingProperties.shaderGroupHandleSize) * GROUP_RAYGEN;
     VkDeviceSize bindingOffsetMissShader   = static_cast<VkDeviceSize>(rayTracingProperties.shaderGroupHandleSize) * GROUP_MISS_BACKGROUND;
@@ -1168,16 +1175,16 @@ void recordCommandBufferRender(uint32_t swapchainIndex) {
     beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
     VkImageSubresourceRange subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
 
-    VkCommandBuffer& commandBuffer = perSwapchainImage[swapchainIndex].commandBufferRender;
+    VkCommandBuffer& commandBuffer = perFrame[frame].commandBufferRender;
     VK_CHECK_RESULT(vkBeginCommandBuffer(commandBuffer, &beginInfo), "failed to begin command buffer");
 
     // ray tracing dispath
 
-    uint32_t uboDynamicOffset = swapchainIndex * bufferUBO.dynamicStride;
+    uint32_t uboDynamicOffset = frame * bufferUBO.dynamicStride;
 
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_RAY_TRACING_NV, pipeline);
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_RAY_TRACING_NV, pipelineLayout, 0, 1, &descriptorSetRender, 1, &uboDynamicOffset);
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_RAY_TRACING_NV, pipelineLayout, 1, 1, &perSwapchainImage[swapchainIndex].descriptorSetModels, 0, nullptr);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_RAY_TRACING_NV, pipelineLayout, 0, 1, &perFrame[frame].descriptorSetRender, 1, &uboDynamicOffset);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_RAY_TRACING_NV, pipelineLayout, 1, 1, &perFrame[frame].descriptorSetModels, 0, nullptr);
 
     vkCmdTraceRaysNV(commandBuffer,
         shaderBindingTable.buffer, bindingOffsetRayGenShader,
@@ -1189,13 +1196,13 @@ void recordCommandBufferRender(uint32_t swapchainIndex) {
     VK_CHECK_RESULT(vkEndCommandBuffer(commandBuffer), "failed to end rendering command buffer");
 }
 
-void updateUniformBuffer(glm::mat4 viewInverse, glm::mat4 projInverse, glm::vec3 cameraPos, uint32_t swapchainIndex) {
+void updateUniformBuffer(glm::mat4 viewInverse, glm::mat4 projInverse, glm::vec3 cameraPos, uint32_t frame) {
     UniformData uniformData;
     uniformData.viewInverse = viewInverse;
     uniformData.projInverse = projInverse;
     uniformData.cameraPos = glm::vec4(cameraPos, 1.0f);
 
-    bufferUBO.upload(&uniformData, sizeof(UniformData), static_cast<VkDeviceSize>(swapchainIndex) * bufferUBO.dynamicStride, device);
+    bufferUBO.upload(&uniformData, sizeof(UniformData), static_cast<VkDeviceSize>(frame) * bufferUBO.dynamicStride, device);
 }
 
 void recreateSwapChain() {
@@ -1204,8 +1211,8 @@ void recreateSwapChain() {
     cleanupSwapChain();
 
     createSwapChain();
-    createRenderImage();
-    createDescriptorSetRender();
+    createRenderImages();
+    createDescriptorSetsRender();
     createCommandBuffersRender();
     createCommandBuffersImageCopy();
 }
@@ -1242,10 +1249,10 @@ void cleanUp() {
     vkDestroyDescriptorSetLayout(device, descriptorSetLayoutModels, VK_ALLOCATOR);
     vkDestroyDescriptorSetLayout(device, descriptorSetLayoutRender, VK_ALLOCATOR);
 
-    for (int i = 0; i < perSwapchainImage.size(); i++) {
-        perSwapchainImage[i].spheresBuffer.destroy(device);
-        vkDestroyAccelerationStructureNV(device, perSwapchainImage[i].tlas.accelerationStructure, nullptr);
-        vkFreeMemory(device, perSwapchainImage[i].tlas.memory, VK_ALLOCATOR);
+    for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+        perFrame[i].spheresBuffer.destroy(device);
+        vkDestroyAccelerationStructureNV(device, perFrame[i].tlas.accelerationStructure, nullptr);
+        vkFreeMemory(device, perFrame[i].tlas.memory, VK_ALLOCATOR);
     }
     perSwapchainImage.clear();
 
@@ -1260,12 +1267,12 @@ void cleanUp() {
 
     cleanupSwapChain();
 
-    for (size_t i = 0; i < _MAX_FRAMES_IN_FLIGHT; i++) {
-        vkDestroySemaphore(device, semaphoresImageAvailable[i], VK_ALLOCATOR);
-        vkDestroySemaphore(device, semaphoresRenderFinished[i], VK_ALLOCATOR);
-        vkDestroySemaphore(device, semaphoresImGuiFinished[i], VK_ALLOCATOR);
-        vkDestroySemaphore(device, semaphoresImageCopyFinished[i], VK_ALLOCATOR);
-        vkDestroyFence(device, inFlightFences[i], VK_ALLOCATOR);
+    for (size_t f = 0; f < MAX_FRAMES_IN_FLIGHT; f++) {
+        vkDestroySemaphore(device, perFrame[f].semaphoreImageAvailable, VK_ALLOCATOR);
+        vkDestroySemaphore(device, perFrame[f].semaphoreRenderFinished, VK_ALLOCATOR);
+        vkDestroySemaphore(device, perFrame[f].semaphoreImGuiFinished, VK_ALLOCATOR);
+        vkDestroySemaphore(device, perFrame[f].semaphoreImageCopyFinished, VK_ALLOCATOR);
+        vkDestroyFence(device, perFrame[f].fenceRenderComplete, VK_ALLOCATOR);
     }
     vkDestroyCommandPool(device, commandPool, VK_ALLOCATOR);
 
@@ -1281,12 +1288,14 @@ void cleanUp() {
 
 void cleanupSwapChain() {
     vkDestroySwapchainKHR(device, swapchain.swapchain, VK_ALLOCATOR);
-    for (int i = 0; i < perSwapchainImage.size(); i++) {
-        vkFreeCommandBuffers(device, commandPool, 1, &perSwapchainImage[i].commandBufferRender);
-        vkFreeCommandBuffers(device, commandPool, 1, &perSwapchainImage[i].commandBufferImageCopy);
+    for (int s = 0; s < perSwapchainImage.size(); s++) {
+        vkFreeCommandBuffers(device, commandPool, MAX_FRAMES_IN_FLIGHT, perSwapchainImage[s].commandBufferImageCopy);
+    }
+    for (int f = 0; f < MAX_FRAMES_IN_FLIGHT; f++) {
+        vkFreeCommandBuffers(device, commandPool, 1, &perFrame[f].commandBufferRender);
+        perFrame[f].renderImage.destroy(device);
     }
     vkDestroyDescriptorPool(device, descriptorPoolRender, VK_ALLOCATOR);
-    renderImage.destroy(device);
 }
 
 void cleanUpAccelerationStructure(Vk::AccelerationStructure& as) {

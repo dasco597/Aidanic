@@ -49,7 +49,7 @@ namespace Aidanic {
     float backSpeed = 4;
     float radiansPerMousePosYaw = 0.001f; // horizontal - local y axis rotation
     float radiansPerMousePosPitch = 0.0008f; // vertical - local z axis rotation
-    float radiansPerSecondRoll = _AID_PI / 4.0f; // local x axis rotation
+    float radiansPerSecondRoll = AID_PI / 4.0f; // local x axis rotation
 
     glm::vec3 viewerPosition = glm::vec3(-5.f, 0.f, 0.f);    // your position in the world
     glm::vec3 viewerForward = glm::vec3(1.f, 0.f, 0.f);	    // direction you are facing
@@ -65,7 +65,7 @@ namespace Aidanic {
         AID_INFO("~ Initializing Aidanic...");
 
         std::vector<const char*> requiredExtensions;
-        IOInterface::init(requiredExtensions, _WINDOW_SIZE_X, _WINDOW_SIZE_Y);
+        IOInterface::init(requiredExtensions, WINDOW_SIZE_X, WINDOW_SIZE_Y);
         AID_INFO("IO interface initialized");
 
         updateMatrices();

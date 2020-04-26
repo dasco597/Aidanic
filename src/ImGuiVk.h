@@ -11,12 +11,12 @@ namespace ImGuiVk {
 
     void init();
 
-    void recordRenderCommands(uint32_t swapchainIndex);
-    void recreateFramebuffer();
+    void recordRenderCommands(uint32_t frame);
+    void recreateFramebuffer(uint32_t frame);
 
     float* getpClearValue();
-    VkCommandBuffer getCommandBuffer(uint32_t swapchainIndex);
-    bool shouldRender(uint32_t swapchainIndex);
+    VkCommandBuffer getCommandBuffer(uint32_t frame);
+    bool shouldRender(uint32_t frame);
 
     void cleanup();
 

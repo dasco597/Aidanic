@@ -26,6 +26,6 @@ namespace Renderer {
     VkSurfaceKHR getSurface();
     VkCommandPool getCommandPool();
     uint32_t getNumSwapchainImages();
-    Vk::StorageImage getRenderImage();
+    Vk::StorageImage getRenderImage(uint32_t frame);
 };
 
