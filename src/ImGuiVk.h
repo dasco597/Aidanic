@@ -12,7 +12,7 @@ namespace ImGuiVk {
     void init();
 
     void recordRenderCommands(uint32_t frame);
-    void recreateFramebuffer(uint32_t frame);
+    void recreateFramebuffers();
 
     float* getpClearValue();
     VkCommandBuffer getCommandBuffer(uint32_t frame);

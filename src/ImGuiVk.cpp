@@ -19,17 +19,19 @@ namespace ImGuiVk {
     VkSampler fontSampler;
 
     VkCommandPool commandPool;
+
     struct PerFrame {
         Vk::BufferHostVisible vertexBuffer, indexBuffer;
         VkCommandBuffer commandBuffer;
         bool render = false;
 
         VkFramebuffer framebuffer;
-        VkRenderPass renderpass;
-        VkPipeline pipeline;
         VkImageMemoryBarrier renderImageBarrier;
     };
     PerFrame perFrame[MAX_FRAMES_IN_FLIGHT];
+
+    VkRenderPass renderpass;
+    VkPipeline pipeline;
 
     VkDescriptorSet descriptorSet;
     VkDescriptorSetLayout descriptorSetLayout;
@@ -37,7 +39,7 @@ namespace ImGuiVk {
 
     // private function declarations
 
-    void createFramebuffer(uint32_t frame);
+    void createFramebuffers();
     void createFontTexture();
     void createDescriptorSets();
     void createRenderPass();
@@ -56,42 +58,43 @@ namespace ImGuiVk {
         createFontTexture();
         createDescriptorSets();
         createRenderPass();
-        for (int f = 0; f < MAX_FRAMES_IN_FLIGHT; f++) createFramebuffer(f);
+        createFramebuffers();
         createPipeline();
         createCommandBuffers();
     }
 
-    void createFramebuffer(uint32_t frame) {
+    void createFramebuffers() {
+        for (int f = 0; f < MAX_FRAMES_IN_FLIGHT; f++) {
+            VkFramebufferCreateInfo framebufferInfo = {};
+            framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+            framebufferInfo.attachmentCount = 1;
+            framebufferInfo.layers = 1;
+            VkImageView attachments[] = {
+                Renderer::getRenderImage(f).view
+            };
 
-        VkFramebufferCreateInfo framebufferInfo = {};
-        framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-        framebufferInfo.attachmentCount = 1;
-        framebufferInfo.layers = 1;
-        VkImageView attachments[] = {
-            Renderer::getRenderImage(frame).view
-        };
+            framebufferInfo.pAttachments = attachments;
+            framebufferInfo.renderPass = renderpass;
+            framebufferInfo.width = Renderer::getRenderImage(f).extent.width;
+            framebufferInfo.height = Renderer::getRenderImage(f).extent.height;
 
-        framebufferInfo.pAttachments = attachments;
-        framebufferInfo.renderPass = perFrame[frame].renderpass;
-        framebufferInfo.width = Renderer::getRenderImage(frame).extent.width;
-        framebufferInfo.height = Renderer::getRenderImage(frame).extent.height;
+            VK_CHECK_RESULT(vkCreateFramebuffer(Renderer::getDevice(), &framebufferInfo, nullptr, &perFrame[f].framebuffer), "failed to create imgui framebuffer");
 
-        VK_CHECK_RESULT(vkCreateFramebuffer(Renderer::getDevice(), &framebufferInfo, nullptr, &perFrame[frame].framebuffer), "failed to create imgui framebuffer");
+            // render image barrier
 
-        // render image barrier
+            VkImageSubresourceRange imageSubresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
 
-        VkImageSubresourceRange imageSubresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
-
-        perFrame[frame].renderImageBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-        perFrame[frame].renderImageBarrier.pNext = VK_NULL_HANDLE;
-        perFrame[frame].renderImageBarrier.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-        perFrame[frame].renderImageBarrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
-        perFrame[frame].renderImageBarrier.oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-        perFrame[frame].renderImageBarrier.newLayout = VK_IMAGE_LAYOUT_GENERAL;
-        perFrame[frame].renderImageBarrier.srcQueueFamilyIndex = 0;
-        perFrame[frame].renderImageBarrier.dstQueueFamilyIndex = 0;
-        perFrame[frame].renderImageBarrier.image = Renderer::getRenderImage(frame).image;
-        perFrame[frame].renderImageBarrier.subresourceRange = imageSubresourceRange;
+            perFrame[f].renderImageBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+            perFrame[f].renderImageBarrier.pNext = VK_NULL_HANDLE;
+            perFrame[f].renderImageBarrier.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+            perFrame[f].renderImageBarrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+            perFrame[f].renderImageBarrier.oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+            perFrame[f].renderImageBarrier.newLayout = VK_IMAGE_LAYOUT_GENERAL;
+            perFrame[f].renderImageBarrier.srcQueueFamilyIndex = 0;
+            perFrame[f].renderImageBarrier.dstQueueFamilyIndex = 0;
+            perFrame[f].renderImageBarrier.image = Renderer::getRenderImage(f).image;
+            perFrame[f].renderImageBarrier.subresourceRange = imageSubresourceRange;
+        }
     }
 
     void createFontTexture() {
@@ -274,6 +277,7 @@ namespace ImGuiVk {
 
     void createRenderPass() {
         VkAttachmentDescription colorAttachment = {};
+        colorAttachment.format = Renderer::getRenderImage(0).format;
         colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
         colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
         colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
@@ -308,11 +312,7 @@ namespace ImGuiVk {
         renderPassInfo.dependencyCount = 1;
         renderPassInfo.pDependencies = &dependency;
 
-        for (int f = 0; f < MAX_FRAMES_IN_FLIGHT; f++) {
-            colorAttachment.format = Renderer::getRenderImage(f).format;
-
-            VK_CHECK_RESULT(vkCreateRenderPass(Renderer::getDevice(), &renderPassInfo, nullptr, &perFrame[f].renderpass), "failed to create render pass");
-        }
+        VK_CHECK_RESULT(vkCreateRenderPass(Renderer::getDevice(), &renderPassInfo, nullptr, &renderpass), "failed to create render pass");
     }
 
     void createPipeline() {
@@ -444,15 +444,12 @@ namespace ImGuiVk {
         pipelineInfo.pColorBlendState = &colorBlending;
         pipelineInfo.pDynamicState = &dynamicState;
         pipelineInfo.layout = pipelineLayout;
+        pipelineInfo.renderPass = renderpass;
         pipelineInfo.subpass = 0;
         pipelineInfo.basePipelineHandle = VK_NULL_HANDLE;
 
-        for (int f = 0; f < MAX_FRAMES_IN_FLIGHT; f++) {
-            pipelineInfo.renderPass = perFrame[f].renderpass;
-
-            VK_CHECK_RESULT(vkCreateGraphicsPipelines(Renderer::getDevice(), VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &perFrame[f].pipeline), "failed to create imgui pipeline");
-        }
-
+        VK_CHECK_RESULT(vkCreateGraphicsPipelines(Renderer::getDevice(), VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &pipeline), "failed to create imgui pipeline");
+        
         vkDestroyShaderModule(Renderer::getDevice(), fragShaderModule, nullptr);
         vkDestroyShaderModule(Renderer::getDevice(), vertShaderModule, nullptr);
     }
@@ -599,15 +596,16 @@ namespace ImGuiVk {
         perFrame[frame].render = true;
     }
 
-    void recreateFramebuffer(uint32_t frame) {
-        vkDestroyFramebuffer(Renderer::getDevice(), perFrame[frame].framebuffer, VK_ALLOCATOR);
-        createFramebuffer(frame);
+    void recreateFramebuffers() {
+        for (int f = 0; f < MAX_FRAMES_IN_FLIGHT; f++)
+            vkDestroyFramebuffer(Renderer::getDevice(), perFrame[f].framebuffer, VK_ALLOCATOR);
+        createFramebuffers();
     }
 
     void setupRenderState(VkCommandBuffer commandBuffer, uint32_t frame, int fb_width, int fb_height, ImDrawData* draw_data) {
         VkRenderPassBeginInfo renderPassBeginInfo = {};
         renderPassBeginInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-        renderPassBeginInfo.renderPass = perFrame[frame].renderpass;
+        renderPassBeginInfo.renderPass = renderpass;
         renderPassBeginInfo.framebuffer = perFrame[frame].framebuffer;
         renderPassBeginInfo.renderArea.extent = Renderer::getRenderImage(frame).extent;
         renderPassBeginInfo.clearValueCount = 1;
@@ -629,7 +627,7 @@ namespace ImGuiVk {
         translate[1] = -1.0f - draw_data->DisplayPos.y * scale[1];
 
         vkCmdBeginRenderPass(commandBuffer, &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
-        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, perFrame[frame].pipeline);
+        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
         vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, &descriptorSet, 0, nullptr);
         VkDeviceSize offsets[] = { 0 };
         vkCmdBindVertexBuffers(commandBuffer, 0, 1, &perFrame[frame].vertexBuffer.buffer, offsets);
@@ -649,9 +647,10 @@ namespace ImGuiVk {
         fontTexture.destroy(Renderer::getDevice());
         vkDestroySampler(Renderer::getDevice(), fontSampler, VK_ALLOCATOR);
 
+        vkDestroyPipeline(Renderer::getDevice(), pipeline, VK_ALLOCATOR);
+        vkDestroyRenderPass(Renderer::getDevice(), renderpass, VK_ALLOCATOR);
+
         for (int f = 0; f < MAX_FRAMES_IN_FLIGHT; f++) {
-            vkDestroyPipeline(Renderer::getDevice(), perFrame[f].pipeline, VK_ALLOCATOR);
-            vkDestroyRenderPass(Renderer::getDevice(), perFrame[f].renderpass, VK_ALLOCATOR);
             vkDestroyFramebuffer(Renderer::getDevice(), perFrame[f].framebuffer, VK_ALLOCATOR);
             perFrame[f].vertexBuffer.destroy(Renderer::getDevice());
             perFrame[f].indexBuffer.destroy(Renderer::getDevice());

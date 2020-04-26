@@ -854,7 +854,7 @@ void drawFrame(bool framebufferResized, glm::mat4 viewInverse, glm::mat4 projInv
     // TODO framebufferResized? debug and check result values
     if (resultAcquire == VK_ERROR_OUT_OF_DATE_KHR) {
         recreateSwapChain();
-        ImGuiVk::recreateFramebuffer(currentFrame);
+        ImGuiVk::recreateFramebuffers();
         return;
     } else if (resultAcquire != VK_SUCCESS && resultAcquire != VK_SUBOPTIMAL_KHR) {
         AID_ERROR("failed to acquire swap chain image!");
@@ -951,7 +951,7 @@ void drawFrame(bool framebufferResized, glm::mat4 viewInverse, glm::mat4 projInv
 
         if (resultPresent == VK_ERROR_OUT_OF_DATE_KHR || resultPresent == VK_SUBOPTIMAL_KHR || framebufferResized) {
             recreateSwapChain();
-            ImGuiVk::recreateFramebuffer(currentFrame);
+            ImGuiVk::recreateFramebuffers();
         } else if (resultPresent != VK_SUCCESS) {
             AID_ERROR("failed to present swap chain image!");
         }
