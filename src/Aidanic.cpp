@@ -121,6 +121,57 @@ namespace Aidanic {
         static EditorState editorState = EditorState::NEW;
         static Model::EllipsoidID selectedEllipsoid;
 
+        // ellipsoid parameters
+        static glm::vec3 ellipsoidPos = glm::vec3(0.f);
+        static glm::vec3 ellipsoidRadius = glm::vec3(0.5f);
+        static glm::vec4 ellipsoidColor = glm::vec4(1.0f);
+
+        // object editor
+        {
+            ImGui::Begin("Editor");
+            switch (editorState)
+            {
+            case EditorState::NEW:
+                ImGui::Text("New ellipsoid"); break;
+
+            case EditorState::EDIT:
+                std::string message = std::string("Ellipsoid ") + std::to_string(selectedEllipsoid.getID());
+                ImGui::Text(message.c_str()); break;
+            }
+
+            ImGui::SliderFloat("pos x", &ellipsoidPos.x, -2.0f, 2.0f);
+            ImGui::SliderFloat("pos y", &ellipsoidPos.y, -2.0f, 2.0f);
+            ImGui::SliderFloat("pos z", &ellipsoidPos.z, -2.0f, 2.0f);
+            ImGui::SliderFloat("radius x", &ellipsoidRadius.x, 0.0f, 2.0f);
+            ImGui::SliderFloat("radius y", &ellipsoidRadius.y, 0.0f, 2.0f);
+            ImGui::SliderFloat("radius z", &ellipsoidRadius.z, 0.0f, 2.0f);
+            ImGui::ColorEdit3("color", &ellipsoidColor.r);
+
+            switch (editorState)
+            {
+            case EditorState::NEW:
+                if (ImGui::Button("Add ellipsoid")) {
+                    Model::EllipsoidID id = PrimitiveManager::addEllipsoid(Model::Ellipsoid(ellipsoidPos, ellipsoidRadius, ellipsoidColor));
+                    editorState = EditorState::EDIT;
+                    selectedEllipsoid = id;
+                }
+                break;
+
+            case EditorState::EDIT:
+                if (ImGui::Button("Update")) {
+                    PrimitiveManager::updateEllipsoid(selectedEllipsoid, ellipsoidPos, ellipsoidRadius, ellipsoidColor);
+                }
+
+                if (ImGui::Button("Delete")) {
+                    PrimitiveManager::deleteEllipsoid(selectedEllipsoid);
+                    editorState = EditorState::NEW;
+                }
+                break;
+            }
+
+            ImGui::End();
+        }
+
         // scene graph
         {
             ImGui::Begin("Scene");
@@ -137,56 +188,11 @@ namespace Aidanic {
                 if (ImGui::Button(message.c_str())) {
                     editorState = EditorState::EDIT;
                     selectedEllipsoid = id;
+
+                    ellipsoidPos = glm::vec3(PrimitiveManager::getEllipsoid(id).center);
+                    ellipsoidRadius = glm::vec3(PrimitiveManager::getEllipsoid(id).radius);
+                    ellipsoidColor = PrimitiveManager::getEllipsoid(id).color;
                 }
-            }
-
-            ImGui::End();
-        }
-
-        // object editor
-        {
-            ImGui::Begin("Editor");
-            switch (editorState)
-            {
-            case EditorState::NEW:
-                ImGui::Text("New ellipsoid"); break;
-
-            case EditorState::EDIT:
-                std::string message = std::string("Ellipsoid ") + std::to_string(selectedEllipsoid.getID());
-                ImGui::Text(message.c_str()); break;
-            }
-
-            // ellipsoid parameters
-            static glm::vec3 ellipsoidPos = glm::vec3(0.f);
-            static glm::vec3 ellipsoidRadius = glm::vec3(0.5f);
-            static glm::vec4 ellipsoidColor = glm::vec4(1.0f);
-
-            ImGui::SliderFloat("pos x", &ellipsoidPos.x, -2.0f, 2.0f);
-            ImGui::SliderFloat("pos y", &ellipsoidPos.y, -2.0f, 2.0f);
-            ImGui::SliderFloat("pos z", &ellipsoidPos.z, -2.0f, 2.0f);
-            ImGui::SliderFloat("radius x", &ellipsoidRadius.x, 0.0f, 2.0f);
-            ImGui::SliderFloat("radius y", &ellipsoidRadius.y, 0.0f, 2.0f);
-            ImGui::SliderFloat("radius z", &ellipsoidRadius.z, 0.0f, 2.0f);
-            ImGui::ColorEdit3("color", &ellipsoidColor.r);
-
-            switch (editorState)
-            {
-            case EditorState::NEW:
-                if (ImGui::Button("Add ellipsoid")) {
-                    PrimitiveManager::addEllipsoid(Model::Ellipsoid(ellipsoidPos, ellipsoidRadius, ellipsoidColor));
-                }
-                break;
-
-            case EditorState::EDIT:
-                if (ImGui::Button("Update")) {
-                    PrimitiveManager::updateEllipsoid(selectedEllipsoid, ellipsoidPos, ellipsoidRadius, ellipsoidColor);
-                }
-
-                if (ImGui::Button("Delete")) {
-                    PrimitiveManager::deleteEllipsoid(selectedEllipsoid);
-                    editorState = EditorState::NEW;
-                }
-                break;
             }
 
             ImGui::End();
