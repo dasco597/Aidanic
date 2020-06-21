@@ -31,4 +31,5 @@ void main()
 
     vec4 color = hit_payload.color * shadow;
     ray_payload.color = color;
+    ray_payload.objectID = hit_payload.objectID;
 }

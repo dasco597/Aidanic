@@ -44,6 +44,7 @@ void main()
 		if (dist < EPSILON) {
 			hit_payload.normal = vec4(gl_ObjectToWorldNV * vec4(calc_normal(point, center, radius), 1.0), 1.0);
 			hit_payload.color = ellipsoids[gl_InstanceID].color;
+			hit_payload.objectID = ellipsoids[gl_InstanceID].objectID;
 			reportIntersectionNV(depth, uint(gl_InstanceID));
 			return;
 		}

@@ -52,9 +52,9 @@ namespace PrimitiveManager {
         return getEllipsoidRef(id);
     }
 
-    EllipsoidID addEllipsoid(Ellipsoid ellipsoid) {
+    EllipsoidID addEllipsoid(glm::vec3 center, glm::vec3 radius, glm::vec4 color) {
         EllipsoidID id = getNewEllipsoidID();
-        ellipsoids[id] = ellipsoid;
+        ellipsoids[id] = Model::Ellipsoid(center, radius, color, id);
         ellipsoidIDs.push_back(id);
 
         Renderer::addEllipsoid(id);

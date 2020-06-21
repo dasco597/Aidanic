@@ -21,11 +21,11 @@ const bool enableValidationLayers = true;
 #endif
 
 // shader files (relative to assets folder, _CONFIG::getAssetsPath())
-#define SHADER_SRC_RAYGEN               "spirv/scene.rgen.spv"
-#define SHADER_SRC_MISS_BACKGROUND      "spirv/background.rmiss.spv"
-#define SHADER_SRC_MISS_SHADOW          "spirv/shadow.rmiss.spv"
-#define SHADER_SRC_CLOSEST_HIT_SCENE    "spirv/scene.rchit.spv"
-#define SHADER_SRC_INTERSECTION_ELLIPSOID  "spirv/ellipsoid.rint.spv"
+#define SHADER_SRC_RAYGEN                   "spirv/scene.rgen.spv"
+#define SHADER_SRC_MISS_BACKGROUND          "spirv/background.rmiss.spv"
+#define SHADER_SRC_MISS_SHADOW              "spirv/shadow.rmiss.spv"
+#define SHADER_SRC_CLOSEST_HIT_SCENE        "spirv/scene.rchit.spv"
+#define SHADER_SRC_INTERSECTION_ELLIPSOID   "spirv/ellipsoid.rint.spv"
 
 // shader stage indices
 enum {
@@ -46,6 +46,7 @@ enum {
     GROUP_COUNT
 };
 
+// TODO: DOD object building (vulkan commands take arrays of objects)
 
 namespace Renderer {
 
@@ -107,7 +108,7 @@ struct _PerFrame {
     VkFence fenceRenderComplete;
 };
 _PerFrame perFrame[MAX_FRAMES_IN_FLIGHT];
-size_t currentFrame = 0;
+uint32_t currentFrame = 0, lastRenderedFrame = 0;
 
 Vk::BufferHostVisible bufferUBO; // per frame
 
@@ -122,6 +123,8 @@ struct UniformData {
     glm::mat4 projInverse = glm::mat4(1.0f);
     glm::vec4 cameraPos = glm::vec4(0.0f);
 };
+
+Vk::BufferHostVisible bufferObjectIDFetch;
 
 const char* validationLayers[1] = {
     "VK_LAYER_KHRONOS_validation"
@@ -163,6 +166,8 @@ void createCommandPool();
 void createSyncObjects();
 
 void createRenderImages();
+void createIDImages();
+void createIDFetchBuffer();
 void initPerFrameRenderResources();
 void createUBO(glm::mat4 viewInverse, glm::mat4 projInverse, glm::vec3 cameraPos);
 
@@ -243,6 +248,8 @@ void init(std::vector<const char*>& requiredExtensions, glm::mat4 viewInverse, g
     createSyncObjects();
 
     createRenderImages();
+    createIDImages();
+    createIDFetchBuffer();
     createDescriptorSetLayouts();
     initPerFrameRenderResources();
     createUBO(viewInverse, projInverse, cameraPos);
@@ -498,7 +505,6 @@ void createRenderImages() {
     imageCI.usage = VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
     imageCI.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 
-
     VkImageViewCreateInfo colorImageView{};
     colorImageView.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
     colorImageView.viewType = VK_IMAGE_VIEW_TYPE_2D;
@@ -537,6 +543,62 @@ void createRenderImages() {
         recordImageLayoutTransition(cmdBuffer, perFrame[f].renderImage.image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL, { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 });
         Vk::endSingleTimeCommands(device, cmdBuffer, queues.graphics, commandPool);
     }
+}
+
+void createIDImages() {
+    VkImageCreateInfo imageCI = {};
+    imageCI.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+    imageCI.imageType = VK_IMAGE_TYPE_2D;
+    imageCI.extent.depth = 1;
+    imageCI.mipLevels = 1;
+    imageCI.arrayLayers = 1;
+    imageCI.samples = VK_SAMPLE_COUNT_1_BIT;
+    imageCI.tiling = VK_IMAGE_TILING_OPTIMAL;
+    imageCI.usage = VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+    imageCI.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+
+    VkImageViewCreateInfo colorImageView{};
+    colorImageView.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+    colorImageView.viewType = VK_IMAGE_VIEW_TYPE_2D;
+    colorImageView.subresourceRange = {};
+    colorImageView.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    colorImageView.subresourceRange.baseMipLevel = 0;
+    colorImageView.subresourceRange.levelCount = 1;
+    colorImageView.subresourceRange.baseArrayLayer = 0;
+    colorImageView.subresourceRange.layerCount = 1;
+
+    for (int f = 0; f < MAX_FRAMES_IN_FLIGHT; f++) {
+        perFrame[f].objectIDsImage.extent = swapchain.extent;
+        perFrame[f].objectIDsImage.format = VK_FORMAT_R32_SINT;
+
+        imageCI.format = perFrame[f].objectIDsImage.format;
+        imageCI.extent.width = perFrame[f].objectIDsImage.extent.width;
+        imageCI.extent.height = perFrame[f].objectIDsImage.extent.height;
+
+        VK_CHECK_RESULT(vkCreateImage(device, &imageCI, VK_ALLOCATOR, &perFrame[f].objectIDsImage.image), "failed to create ray tracing storage image");
+
+        VkMemoryRequirements memReqs;
+        vkGetImageMemoryRequirements(device, perFrame[f].objectIDsImage.image, &memReqs);
+        VkMemoryAllocateInfo memoryAllocateInfo{};
+        memoryAllocateInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+        memoryAllocateInfo.allocationSize = memReqs.size;
+        memoryAllocateInfo.memoryTypeIndex = Vk::findMemoryType(physicalDevice, memReqs.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+
+        VK_CHECK_RESULT(vkAllocateMemory(device, &memoryAllocateInfo, nullptr, &perFrame[f].objectIDsImage.memory), "failed to allocate render image memory");
+        VK_CHECK_RESULT(vkBindImageMemory(device, perFrame[f].objectIDsImage.image, perFrame[f].objectIDsImage.memory, 0), "failed to bind image memory");
+
+        colorImageView.format = perFrame[f].objectIDsImage.format;
+        colorImageView.image = perFrame[f].objectIDsImage.image;
+        VK_CHECK_RESULT(vkCreateImageView(device, &colorImageView, nullptr, &perFrame[f].objectIDsImage.view), "failed to create render image view");
+
+        VkCommandBuffer cmdBuffer = Vk::beginSingleTimeCommands(device, commandPool);
+        recordImageLayoutTransition(cmdBuffer, perFrame[f].objectIDsImage.image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL, { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 });
+        Vk::endSingleTimeCommands(device, cmdBuffer, queues.graphics, commandPool);
+    }
+}
+
+void createIDFetchBuffer() {
+    bufferObjectIDFetch.create(VK_BUFFER_USAGE_TRANSFER_DST_BIT, sizeof(int32_t), device, physicalDevice);
 }
 
 void initPerFrameRenderResources() {
@@ -597,9 +659,16 @@ void createDescriptorSetLayouts() {
         layoutBindingUniformBuffer.descriptorCount = 1;
         layoutBindingUniformBuffer.stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_NV;
 
+        VkDescriptorSetLayoutBinding layoutBindingObjectIDsImage{};
+        layoutBindingObjectIDsImage.binding = 2;
+        layoutBindingObjectIDsImage.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+        layoutBindingObjectIDsImage.descriptorCount = 1;
+        layoutBindingObjectIDsImage.stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_NV;
+
         std::vector<VkDescriptorSetLayoutBinding> bindings({
             layoutBindingRenderImage,
-            layoutBindingUniformBuffer });
+            layoutBindingUniformBuffer,
+            layoutBindingObjectIDsImage });
 
         VkDescriptorSetLayoutCreateInfo descriptorSetLayoutCI{};
         descriptorSetLayoutCI.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
@@ -743,6 +812,16 @@ void createDescriptorSetsRender() {
     uniformBufferWrite.pBufferInfo = &uboDescriptor;
     uniformBufferWrite.dstBinding = 1;
 
+    // object ids image descriptor
+
+    VkDescriptorImageInfo objectIDsImageDescriptor[MAX_FRAMES_IN_FLIGHT];
+
+    VkWriteDescriptorSet objectIDsImageWrite{};
+    objectIDsImageWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    objectIDsImageWrite.descriptorCount = 1;
+    objectIDsImageWrite.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+    objectIDsImageWrite.dstBinding = 2;
+
     std::vector<VkWriteDescriptorSet> writeDescriptorSets;
     for (int f = 0; f < MAX_FRAMES_IN_FLIGHT; f++) {
         VK_CHECK_RESULT(vkAllocateDescriptorSets(device, &descriptorSetAllocateInfo, &perFrame[f].descriptorSetRender), "failed to allocate render descriptor set");
@@ -754,6 +833,14 @@ void createDescriptorSetsRender() {
         renderImageWrite.pImageInfo = &renderImageDescriptor[f];
         renderImageWrite.dstSet = perFrame[f].descriptorSetRender;
         writeDescriptorSets.push_back(renderImageWrite);
+
+        objectIDsImageDescriptor[f] = {};
+        objectIDsImageDescriptor[f].imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+        objectIDsImageDescriptor[f].imageView = perFrame[f].objectIDsImage.view;
+
+        objectIDsImageWrite.pImageInfo = &objectIDsImageDescriptor[f];
+        objectIDsImageWrite.dstSet = perFrame[f].descriptorSetRender;
+        writeDescriptorSets.push_back(objectIDsImageWrite);
 
         uniformBufferWrite.dstSet = perFrame[f].descriptorSetRender;
         writeDescriptorSets.push_back(uniformBufferWrite);
@@ -951,6 +1038,7 @@ void drawFrame(bool framebufferResized, glm::mat4 viewInverse, glm::mat4 projInv
         }
     }
 
+    lastRenderedFrame = currentFrame;
     currentFrame = (currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
 }
 
@@ -1199,6 +1287,51 @@ void updateUniformBuffer(glm::mat4 viewInverse, glm::mat4 projInverse, glm::vec3
     bufferUBO.upload(&uniformData, sizeof(UniformData), static_cast<VkDeviceSize>(frame) * bufferUBO.dynamicStride, device);
 }
 
+int32_t getRenderedObjectID(glm::uvec2 position) {
+    // copy the image texel to a host visible buffer
+
+    // todo needed? recordImageLayoutTransition already has an image barrier
+    vkWaitForFences(device, 1, &perFrame[lastRenderedFrame].fenceRenderComplete, VK_TRUE, DEFAULT_FENCE_TIMEOUT);
+
+    VkCommandBuffer commandBuffer = Vk::beginSingleTimeCommands(device, commandPool);
+    VkImageSubresourceRange subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
+
+    recordImageLayoutTransition(
+        commandBuffer,
+        perFrame[lastRenderedFrame].objectIDsImage.image,
+        VK_IMAGE_LAYOUT_GENERAL,
+        VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+        subresourceRange);
+
+    VkBufferImageCopy copyRegion{};
+    copyRegion.bufferOffset = 0;
+    copyRegion.bufferRowLength = 0;
+    copyRegion.bufferImageHeight = 0;
+    copyRegion.imageSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 };
+    copyRegion.imageOffset = { static_cast<int32_t>(position.x), static_cast<int32_t>(position.y), 0 };
+    copyRegion.imageExtent = { 1, 1, 1 };
+    vkCmdCopyImageToBuffer(commandBuffer, perFrame[lastRenderedFrame].objectIDsImage.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, bufferObjectIDFetch.buffer, 1, &copyRegion);
+
+    recordImageLayoutTransition(
+        commandBuffer,
+        perFrame[lastRenderedFrame].objectIDsImage.image,
+        VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+        VK_IMAGE_LAYOUT_GENERAL,
+        subresourceRange);
+
+    // copy the id value from the host visible buffer
+
+    int32_t* idPointer;
+    int32_t id;
+
+    // todo VkPhysicalDeviceLimits::minMemoryMapAlignment (see vkMapMemory in spec)
+    vkMapMemory(device, bufferObjectIDFetch.memory, 0, sizeof(int32_t), 0, (void**)&idPointer);
+    id = *idPointer;
+    vkUnmapMemory(device, bufferObjectIDFetch.memory);
+
+    return id;
+}
+
 void recreateSwapChain() {
     vkDeviceWaitIdle(device);
 
@@ -1206,6 +1339,7 @@ void recreateSwapChain() {
 
     createSwapChain();
     createRenderImages();
+    createIDImages();
     createDescriptorSetsRender();
     createCommandBuffersRender();
     createCommandBuffersImageCopy();
@@ -1257,6 +1391,7 @@ void cleanUp() {
 
     bufferUBO.destroy(device);
     shaderBindingTable.destroy(device);
+    bufferObjectIDFetch.destroy(device);
     vkDestroyDescriptorPool(device, descriptorPoolModels, VK_ALLOCATOR);
 
     cleanupSwapChain();
@@ -1288,6 +1423,7 @@ void cleanupSwapChain() {
     for (int f = 0; f < MAX_FRAMES_IN_FLIGHT; f++) {
         vkFreeCommandBuffers(device, commandPool, 1, &perFrame[f].commandBufferRender);
         perFrame[f].renderImage.destroy(device);
+        perFrame[f].objectIDsImage.destroy(device);
     }
     vkDestroyDescriptorPool(device, descriptorPoolRender, VK_ALLOCATOR);
 }

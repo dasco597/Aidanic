@@ -20,6 +20,8 @@ namespace Renderer {
     int updateEllipsoid(Model::EllipsoidID ellipsoidID);
     int removeEllipsoid(Model::EllipsoidID ellipsoidID);
 
+    int32_t getRenderedObjectID(glm::uvec2 position);
+
     VkDevice getDevice();
     VkPhysicalDevice getPhysicalDevice();
     VkQueue getGraphicsQueue();

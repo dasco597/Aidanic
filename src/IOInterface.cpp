@@ -102,6 +102,7 @@ void WindowApp::windowResizeCallback(GLFWwindow* window, int width, int height) 
 }
 
 void getWindowSize(int* width, int* height) {
+    // TODO WHAT IF MINIMIZED
     glfwGetFramebufferSize(window, width, height);
 }
 

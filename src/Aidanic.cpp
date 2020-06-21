@@ -100,6 +100,8 @@ namespace Aidanic {
             if (renderImGui) updateImGui();
 
             // submit draw commands for this frame
+            int32_t id = Renderer::getRenderedObjectID(glm::uvec2(600, 400));
+            AID_INFO("-- {} --", id);
             Renderer::drawFrame(windowResized, viewInverse, projInverse, viewerPosition, renderImGui);
         }
     }
@@ -151,7 +153,7 @@ namespace Aidanic {
             {
             case EditorState::NEW:
                 if (ImGui::Button("Add ellipsoid")) {
-                    Model::EllipsoidID id = PrimitiveManager::addEllipsoid(Model::Ellipsoid(ellipsoidPos, ellipsoidRadius, ellipsoidColor));
+                    Model::EllipsoidID id = PrimitiveManager::addEllipsoid(ellipsoidPos, ellipsoidRadius, ellipsoidColor);
                     editorState = EditorState::EDIT;
                     selectedEllipsoid = id;
                 }

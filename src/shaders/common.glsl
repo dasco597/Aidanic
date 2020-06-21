@@ -15,10 +15,12 @@ precision highp float;
 struct HitPayload {
 	vec4 color;
 	vec4 normal;
+	int objectID;
 };
 
 struct RayPayload {
     vec4 color;
+	int objectID;
 };
 
 struct ShadowPayload {
@@ -29,4 +31,5 @@ struct Ellipsoid {
 	vec4 center;
 	vec4 radius;
 	vec4 color;
+	int objectID;
 };
